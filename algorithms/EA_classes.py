@@ -76,12 +76,17 @@ class Individual:
         self.phenotype = None
         self.valid = 0    # invalid until successfully evaluated
 
+        # EvoGym simulation payload (explicit fields to avoid ad-hoc attributes)
+        self.evogym_structure = None
+        self.evogym_connections = None
+        self.evogym_phase_offsets = None
+        self.evogym_controller = None
+
         # === Dynamically create absolute metrics ======================
         for m in METRICS_ABS:
             # displacement (x) is the only one that previously had -inf default
             if m == "displacement":
                 setattr(self, m, float('-inf'))
-                #setattr(self, m, -1000)
             else:
                 setattr(self, m, None)
 

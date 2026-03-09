@@ -11,8 +11,8 @@ sys.path.append(str(ROOT))
 
 from algorithms.experiment import Experiment
 from algorithms.EA_classes import Individual
-from algorithms.GRN_3D import GRN, initialization
-from simulation.simulation_resources import simulate_voxcraft_batch
+from algorithms.GRN_2D import GRN, initialization
+from simulation.simulation_resources import simulate_evogym_batch
 from simulation.prepare_robot_files import prepare_robot_files
 from utils.metrics import genopheno_abs_metrics, behavior_abs_metrics, relative_metrics
 from utils.config import Config
@@ -35,7 +35,6 @@ class CMAES(Experiment):
         self.sigma0 = 0.2
 
         # carry over all params as before
-        self.docker_path = self.args.docker_path
         self.cube_face_size = self.args.cube_face_size
         self.max_voxels = self.args.max_voxels
         self.tfs = self.args.tfs
@@ -141,7 +140,7 @@ class CMAES(Experiment):
                     prepare_robot_files(ind, self.args)
 
             if self.args.run_simulation:
-                simulate_voxcraft_batch(individuals, self.args)
+                simulate_evogym_batch(individuals, self.args)
                 for ind in individuals:
                     behavior_abs_metrics(ind)
 

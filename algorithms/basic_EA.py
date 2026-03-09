@@ -5,13 +5,13 @@ from pathlib import Path
 import shutil
 import time
 
-# make voxcraft folder the root
+# make repository folder the root
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
 from algorithms.experiment import Experiment
 from algorithms.EA_classes import Individual
-from algorithms.GRN_3D import GRN, initialization, mutation_type1, unequal_crossover_prop
-from simulation.simulation_resources import simulate_voxcraft_batch
+from algorithms.GRN_2D import GRN, initialization, mutation_type1, unequal_crossover_prop
+from simulation.simulation_resources import simulate_evogym_batch
 from simulation.prepare_robot_files import prepare_robot_files
 from utils.metrics import genopheno_abs_metrics, behavior_abs_metrics, relative_metrics
 from utils.config import Config
@@ -35,7 +35,6 @@ class EA(Experiment):
         self.novelty_archive = [] # TODO: include in recovery
         self.archive_add_frac = 0.05
 
-        self.docker_path = self.args.docker_path
         self.cube_face_size = self.args.cube_face_size
         self.max_voxels = self.args.max_voxels
         self.voxel_types = self.args.voxel_types
@@ -128,7 +127,7 @@ class EA(Experiment):
                     prepare_robot_files(ind, self.args)
 
             if self.args.run_simulation:
-                simulate_voxcraft_batch(population, self.args)
+                simulate_evogym_batch(population, self.args)
     
                 for ind in population:
                     behavior_abs_metrics(ind)
@@ -175,7 +174,7 @@ class EA(Experiment):
             self.update_novelty_archive(offspring)
 
             if self.args.run_simulation:
-                simulate_voxcraft_batch(offspring, self.args)
+                simulate_evogym_batch(offspring, self.args)
 
                 for ind in offspring:
                     behavior_abs_metrics(ind)
@@ -197,7 +196,7 @@ class EA(Experiment):
             # --- Elitism: keep best displacement ---
             if self.elitism:
                 # best individual from full evaluated pool
-                elite = max(population + offspring, key=lambda ind: ind.displacement)
+                elite = max(population + offspring, key=lambda ind: ind.fitness)
 
                 # only inject if not already present
                 if elite not in new_population:
@@ -239,9 +238,6 @@ if __name__ == "__main__":
     minutes = int((elapsed % 3600) // 60)
     seconds = elapsed % 60
     print(f"\n[RUN-TIME]  {hours}h {minutes}m {seconds:.1f}s")
-
-
-
 
 
 

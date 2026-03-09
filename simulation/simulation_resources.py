@@ -1,312 +1,181 @@
 #!/usr/bin/env python3
+import math
 import os
-import sys
-import time
-import re
-import subprocess
-from pathlib import Path
-from typing import Optional
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Dict, List, Tuple
 
-# --- repo root on sys.path ---
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.append(str(ROOT))
+import numpy as np
 
-# ============================
-# Error classification helpers
-# ============================
 
-RECOVERABLE_SUBSTR = (
-    "too many resources requested",
-    "out of memory",
-    "resource allocation failed",
-    "illegal address",
-    "invalid configuration",
-    "worker failed to finish",
-    ".vxr",
-    "cudaerrormemoryallocation",
-)
+def _resolve_steps(args) -> int:
+    steps = int(getattr(args, "evogym_steps", 500))
+    return max(1, steps)
 
-FATAL_SUBSTR = (
-    "no cuda-capable device is detected",
-    "error: no gpu found",
-    "device lost",
-    "driver shutting down",
-    "device has fallen off the bus",
-    "xid",
-    "cuinit(0) failed",
-    "unspecified launch failure",
-)
 
-def classify_text(s: str) -> str:
-    s = (s or "").lower()
-    if any(x in s for x in FATAL_SUBSTR):
-        return "fatal"
-    if any(x in s for x in RECOVERABLE_SUBSTR):
-        return "recoverable"
-    return "ok"
+def _resolve_workers(args, n_jobs: int) -> int:
+    # Debug rendering should run in a single process to avoid multiple windows.
+    if int(getattr(args, "evogym_headless", 1)) == 0:
+        return 1
+    requested = int(getattr(args, "evogym_num_workers", 0))
+    if requested > 0:
+        return max(1, min(requested, n_jobs))
+    cpu = os.cpu_count() or 1
+    return max(1, min(cpu, n_jobs))
 
-def write_fatal_flag_atomic(path: Path, msg: str) -> None:
-    tmp = str(path) + ".tmp"
-    Path(tmp).write_text(msg + "\n", encoding="utf-8")
-    os.replace(tmp, path)
 
-# ============================
-# Report helpers (FORGIVING)
-# ============================
-
-def find_report(expected_report_file: Path) -> Optional[Path]:
+def _simulate_one_robot(task: Dict) -> Tuple[int, float, str]:
     """
-    Super forgiving:
-      - If expected exists, use it
-      - Else any *.xml in the folder
-      - Else any file containing 'report' in its name
+    Returns:
+      (robot_id, displacement_x, error_msg)
     """
-    if expected_report_file.exists():
-        return expected_report_file
+    from evogym import EvoWorld, EvoSim  # imported here for process safety
+    from evogym.viewer import EvoViewer
 
-    parent = expected_report_file.parent
-    xmls = list(parent.glob("*.xml"))
-    if xmls:
-        return xmls[0]
+    robot_id = int(task["id"])
+    structure = task["structure"]
+    connections = task["connections"]
+    phase_offsets = task["phase_offsets"]
 
-    reportish = [p for p in parent.iterdir() if p.is_file() and "report" in p.name.lower()]
-    return reportish[0] if reportish else None
+    bias = float(task["action_bias"])
+    amplitude = float(task["action_amplitude"])
+    period_steps = max(1, int(task["period_steps"]))
+    sim_steps = int(task["sim_steps"])
+    init_x = int(task["init_x"])
+    init_y = int(task["init_y"])
+    headless = bool(int(task["headless"]))
+    render_mode = str(task["render_mode"])
 
-def parse_fitness_from_report(report_file: Path) -> float:
-    """
-    Very forgiving extraction:
-      1) Try a few common fitness tag variants (case-insensitive)
-      2) Fallback: first float-like number anywhere in the file
-    Only fails if it can't find ANY number at all.
-    """
-    text = report_file.read_text(encoding="utf-8", errors="ignore")
-    if not text.strip():
-        raise ValueError("empty report")
-
-    num = r"([+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)"
-    patterns = [
-        rf"<\s*fitness_score\s*>\s*{num}\s*<\s*/\s*fitness_score\s*>",
-        rf"<\s*fitness[_-]score\s*>\s*{num}\s*<\s*/\s*fitness[_-]score\s*>",
-        rf"<\s*fitness\s*>\s*{num}\s*<\s*/\s*fitness\s*>",
-        rf"<\s*fitnessScore\s*>\s*{num}\s*<\s*/\s*fitnessScore\s*>",
-        rf"<\s*score\s*>\s*{num}\s*<\s*/\s*score\s*>",
-    ]
-    for pat in patterns:
-        m = re.search(pat, text, flags=re.IGNORECASE)
-        if m:
-            return float(m.group(1))
-
-    # Nuclear option: first number anywhere
-    m = re.search(num, text)
-    if m:
-        return float(m.group(1))
-
-    raise ValueError("no numeric value found in report")
-
-# ============================
-# VoxCraft batch runner (SIMPLE)
-# ============================
-
-def simulate_voxcraft_batch(population, args):
-    """
-    Simple, conservative runner:
-      - Serial only (no parallelism)
-      - No NVML/admission control
-      - Multiple retries per robot
-      - Success = report exists AND we can extract a numeric fitness
-      - Fatal GPU/runtime errors abort the whole run with a FATAL sentinel
-    """
-    sim_bin = Path(args.docker_path) / "voxcraft-sim" / "build" / "voxcraft-sim"
-    worker_bin = Path(args.docker_path) / "voxcraft-sim" / "build" / "vx3_node_worker"
-
-    if not sim_bin.exists():
-        raise FileNotFoundError(f"Simulator binary not found at {sim_bin}")
-    if not worker_bin.exists():
-        raise FileNotFoundError(f"Worker binary not found at {worker_bin}")
-
-    # ---- Tunables (favor success + correctness) ----
-    SIM_TIMEOUT_SEC     = 300 #60        # give robots slack
-    MAX_ATTEMPTS        = 3 #2          # retry a bunch
-    BACKOFF_BASE_SEC    = 10 # 5.0        # attempt 1-> sleep 2s, attempt2->4s, etc.
-    CLEAN_BEFORE_RETRY  = True       # delete stale outputs before retrying
-
-    out_path_hist = (
-        Path(args.out_path)
-        / args.study_name
-        / args.experiment_name
-        / f"run_{args.run}"
-        / "simulations"
-    )
-    os.makedirs(out_path_hist, exist_ok=True)
-
-    def robot_dir_for(ind):
-        return (
-            Path(args.out_path)
-            / args.study_name
-            / args.experiment_name
-            / f"run_{args.run}"
-            / "robots"
-            / f"robot{ind.id}"
+    try:
+        world = EvoWorld()
+        world.add_from_array(
+            name="robot",
+            structure=structure,
+            x=init_x,
+            y=init_y,
+            connections=connections,
         )
 
-    def cleanup_outputs(ind_id: int, history_file: Path, expected_report_file: Path) -> None:
-        # Remove per-robot history
-        try:
-            if history_file.exists():
-                history_file.unlink()
-        except Exception:
-            pass
+        sim = EvoSim(world)
+        sim.reset()
+        viewer = None
+        if not headless:
+            viewer = EvoViewer(sim)
+            viewer.track_objects("robot")
 
-        # Remove expected report file
-        try:
-            if expected_report_file.exists():
-                expected_report_file.unlink()
-        except Exception:
-            pass
+        actuator_indices = sim.get_actuator_indices("robot").astype(int).flatten()
+        phase_flat = phase_offsets.reshape(-1)
+        actuator_phases = phase_flat[actuator_indices] if actuator_indices.size else np.array([])
 
-        # Remove any other xml that looks like it belongs to this robot
-        try:
-            for p in expected_report_file.parent.glob("*.xml"):
-                if p.name.startswith(f"{ind_id}_") or p.name == expected_report_file.name:
-                    try:
-                        p.unlink()
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+        # Initial center-of-mass x position.
+        p0 = sim.object_pos_at_time(sim.get_time(), "robot")
+        x0 = float(np.mean(p0[0]))
 
-    def run_one(ind) -> bool:
-        """
-        Returns True if success (fitness extracted), else False after retries.
-        May sys.exit(2) on fatal GPU/driver/runtime death.
-        """
-        if not getattr(ind, "valid", True):
-            return True
+        for t in range(sim_steps):
+            if actuator_indices.size:
+                angle = 2.0 * math.pi * (t / period_steps)
+                action = bias + amplitude * np.sin(angle + actuator_phases)
+                action = np.clip(action, 0.6, 1.6).astype(np.float64)
+                sim.set_action("robot", action)
 
-        robot_dir = robot_dir_for(ind)
-        if not robot_dir.exists():
-            print(f"[SIM-SKIP] {ind.id}: robot dir missing: {robot_dir}")
-            return True
+            unstable = sim.step()
+            if viewer is not None:
+                viewer.render(render_mode)
+            if unstable:
+                break
 
-        base_vxa = robot_dir / "base.vxa"
-        vxd_file = robot_dir / f"{ind.id}.vxd"
-        if not base_vxa.exists():
-            print(f"[SIM-SKIP] {ind.id}: base.vxa missing")
-            return True
-        if not vxd_file.exists():
-            print(f"[SIM-SKIP] {ind.id}: VXD missing")
-            return True
+        # Final center-of-mass x position.
+        p1 = sim.object_pos_at_time(sim.get_time(), "robot")
+        x1 = float(np.mean(p1[0]))
+        # Behavior metric exported to EA: x displacement.
+        displacement_x = x1 - x0
+        if viewer is not None:
+            viewer.close()
+        return robot_id, displacement_x, ""
 
-        history_file = out_path_hist / f"{ind.id}.history"
-        report_file  = out_path_hist / f"{ind.id}_report.xml"
+    except Exception as exc:
+        return robot_id, float("-inf"), f"{type(exc).__name__}: {exc}"
 
-        cmd = [
-            str(sim_bin),
-            "-l",
-            "-w", str(worker_bin),
-            "-i", str(robot_dir),
-            "-o", str(report_file),
-            "-f",
-        ]
 
-        for attempt in range(1, MAX_ATTEMPTS + 1):
-            if attempt > 1 and CLEAN_BEFORE_RETRY:
-                cleanup_outputs(ind.id, history_file, report_file)
+def simulate_evogym_batch(population, args):
+    """
+    Evaluate all valid individuals in EvoGym and write displacement into each individual.
+    """
+    sim_steps = _resolve_steps(args)
+    init_x = int(getattr(args, "evogym_init_x", 3))
+    init_y = int(getattr(args, "evogym_init_y", 1))
+    default_bias = float(getattr(args, "evogym_action_bias", 1.0))
+    default_amplitude = float(getattr(args, "evogym_action_amplitude", 0.4))
+    default_period = int(getattr(args, "evogym_period_steps", 20))
+    headless = int(getattr(args, "evogym_headless", 1))
+    render_mode = str(getattr(args, "evogym_render_mode", "screen"))
 
-            # Run sim, capture stdout to history, stderr in memory
-            attempt_t0 = time.perf_counter()
-
-            with open(history_file, "w", encoding="utf-8") as out_f:
-                p = subprocess.Popen(
-                    cmd,
-                    stdout=out_f,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-
-                timed_out = False
-                try:
-                    stderr = p.communicate(timeout=SIM_TIMEOUT_SEC)[1]
-                except subprocess.TimeoutExpired:
-                    timed_out = True
-                    print(f"[TIMEOUT] {ind.id} attempt {attempt}/{MAX_ATTEMPTS} > {SIM_TIMEOUT_SEC}s, killing.")
-                    p.kill()
-                    try:
-                        stderr = p.communicate(timeout=15)[1]
-                    except subprocess.TimeoutExpired:
-                        stderr = "<no stderr after kill>"
-
-            # Read history for classification
-            try:
-                hist_text = history_file.read_text(encoding="utf-8", errors="ignore") if history_file.exists() else ""
-            except Exception as e:
-                hist_text = f"<history read error: {e}>"
-
-            status_hist = classify_text(hist_text)
-            status_err  = classify_text(stderr)
-
-            # Fatal: abort whole run
-            if "fatal" in (status_hist, status_err):
-                fatal_flag = Path(args.out_path) / args.study_name / "FATAL"
-                write_fatal_flag_atomic(fatal_flag, f"CUDA FATAL on robot {ind.id}. See {history_file}")
-                tail = "\n".join(hist_text.splitlines()[-120:]) if hist_text else "<no history>"
-                print(
-                    f"\n[SIM-CRITICAL] {ind.id}: fatal GPU/driver/runtime error.\n"
-                    f"----- history tail -----\n{tail}\n----- end tail -----\n",
-                    file=sys.stderr, flush=True
-                )
-                sys.exit(2)
-
-            # Success only if a report exists and we can extract a number
-            actual_report = find_report(report_file)
-            if actual_report is not None and not timed_out:
-                try:
-                    ind.displacement = parse_fitness_from_report(actual_report)
-                    attempt_dt = time.perf_counter() - attempt_t0
-                    print(f"[SIM-OK] {ind.id} attempt {attempt}/{MAX_ATTEMPTS}: {attempt_dt:.2f}s")
-
-                    return True
-                except Exception as e:
-                    parse_err = f"parse failed: {e}"
-            else:
-                parse_err = "missing report" if actual_report is None else "timed out"
-
-            # Failed attempt -> retry with backoff (unless last attempt)
-            reason_bits = []
-            if timed_out:
-                reason_bits.append("timeout")
-            if p.returncode != 0:
-                reason_bits.append(f"rc={p.returncode}")
-            if status_err != "ok":
-                reason_bits.append(f"stderr={status_err}")
-            if status_hist != "ok":
-                reason_bits.append(f"hist={status_hist}")
-            reason_bits.append(parse_err)
-
-            reason = ", ".join(reason_bits)
-
-            if attempt < MAX_ATTEMPTS:
-                sleep_s = BACKOFF_BASE_SEC * attempt
-                print(f"[SIM-RETRY] {ind.id} attempt {attempt}/{MAX_ATTEMPTS} failed: {reason} -> sleep {sleep_s:.1f}s")
-                time.sleep(sleep_s)
-            else:
-                print(f"[SIM-FAIL]  {ind.id} failed after {MAX_ATTEMPTS} attempts: {reason}. See {history_file}")
-                return False
-
-        return False
-
-    # ---- Serial loop ----
-    total = 0
-    ok = 0
-    failed = 0
+    id_to_ind = {ind.id: ind for ind in population}
+    tasks: List[Dict] = []
 
     for ind in population:
         if not getattr(ind, "valid", True):
             continue
-        total += 1
-        if run_one(ind):
-            ok += 1
-        else:
-            failed += 1
 
-    print(f"[SIM-DONE] total={total} ok={ok} failed={failed}")
+        if not hasattr(ind, "evogym_structure"):
+            raise RuntimeError(
+                f"Robot {ind.id} missing EvoGym payload. "
+                "Call prepare_robot_files(individual, args) before simulation."
+            )
+
+        ctrl = getattr(ind, "evogym_controller", {})
+        task = {
+            "id": ind.id,
+            "structure": ind.evogym_structure,
+            "connections": ind.evogym_connections,
+            "phase_offsets": ind.evogym_phase_offsets,
+            "action_bias": ctrl.get("action_bias", default_bias),
+            "action_amplitude": ctrl.get("action_amplitude", default_amplitude),
+            "period_steps": ctrl.get("period_steps", default_period),
+            "sim_steps": sim_steps,
+            "init_x": init_x,
+            "init_y": init_y,
+            "headless": headless,
+            "render_mode": render_mode,
+        }
+        tasks.append(task)
+
+    if not tasks:
+        print("[SIM-DONE] total=0 ok=0 failed=0")
+        return
+
+    n_workers = _resolve_workers(args, len(tasks))
+
+    ok = 0
+    failed = 0
+
+    if n_workers == 1:
+        for task in tasks:
+            rid, disp, err = _simulate_one_robot(task)
+            ind = id_to_ind[rid]
+            # Writes raw behavior only; EA fitness is chosen later by
+            # utils.metrics.set_fitness(..., args.fitness_metric).
+            ind.displacement = float(disp)
+            if err:
+                failed += 1
+                print(f"[SIM-FAIL] {rid}: {err}")
+            else:
+                ok += 1
+    else:
+        with ProcessPoolExecutor(max_workers=n_workers) as ex:
+            futs = [ex.submit(_simulate_one_robot, t) for t in tasks]
+            for fut in as_completed(futs):
+                rid, disp, err = fut.result()
+                ind = id_to_ind[rid]
+                # Writes raw behavior only; EA fitness is chosen later by
+                # utils.metrics.set_fitness(..., args.fitness_metric).
+                ind.displacement = float(disp)
+                if err:
+                    failed += 1
+                    print(f"[SIM-FAIL] {rid}: {err}")
+                else:
+                    ok += 1
+
+    print(
+        f"[SIM-DONE] total={len(tasks)} ok={ok} failed={failed} "
+        f"workers={n_workers} steps={sim_steps}"
+    )

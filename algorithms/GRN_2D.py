@@ -8,8 +8,8 @@ from algorithms.voxel_types import VOXEL_TYPES, VOXEL_TYPES_NOBONE, TF_WEIGHTS, 
 
 # a Gene Regulatory Network
 class GRN:
-    # cube
-    diffusion_sites_qt = 6
+    # 2D grid (left/right/up/down)
+    diffusion_sites_qt = 4
 
     def __init__(self, promoter_threshold=0.95, max_voxels=27, cube_face_size=3,
                   genotype=None, voxel_types='withbone', env_conditions=None, plastic=None):
@@ -165,8 +165,8 @@ class GRN:
 
     def regulate(self):
         # 0 means no voxel
-        self.phenotype = np.zeros((self.cube_face_size, self.cube_face_size, self.cube_face_size),
-                                  dtype=object)  # x, y, z
+        self.phenotype = np.zeros((self.cube_face_size, self.cube_face_size),
+                                  dtype=object)  # x, y
         self.maternal_injection()
         self.growth()
 
@@ -322,7 +322,7 @@ class GRN:
                 position_of_max_value = true_indices[max_value_index]
                 slot = position_of_max_value
 
-                potential_child_coord, child_slot = self.find_child_slot(parent_cell.xyz_coordinates, slot)
+                potential_child_coord, child_slot = self.find_child_slot(parent_cell.xy_coordinates, slot)
 
                 # if coordinates within cube bounderies and if position not occupied
                 if all(0 <= i < self.cube_face_size for i in potential_child_coord):
@@ -341,10 +341,10 @@ class GRN:
                         self.quantity_voxels += 1
                         self.new_cell(voxel_type, parent_cell, slot, child_slot, potential_child_coord)
 
-    def new_cell(self, voxel_type, parent_cell, parent_slot, child_slot, xyz_coordinates):
+    def new_cell(self, voxel_type, parent_cell, parent_slot, child_slot, xy_coordinates):
 
-        new_cell = Cell(voxel_type=voxel_type, parent_cell=parent_cell, xyz_coordinates=xyz_coordinates)
-        self.phenotype[tuple(xyz_coordinates)] = new_cell
+        new_cell = Cell(voxel_type=voxel_type, parent_cell=parent_cell, xy_coordinates=xy_coordinates)
+        self.phenotype[tuple(xy_coordinates)] = new_cell
 
         # share concentrations in diffusion site of parent with child
         for tf in parent_cell.transcription_factors:
@@ -358,43 +358,32 @@ class GRN:
         self.express_genes(new_cell)
         self.cells.append(new_cell)
 
-    def find_child_slot(self, xyz_coordinates_parent, parent_slot):
+    def find_child_slot(self, xy_coordinates_parent, parent_slot):
 
         x = 0
         y = 1
-        z = 2
 
         if parent_slot == DS.LEFT:
             child_slot = DS.RIGHT
-            xyz_coordinates_child = list(xyz_coordinates_parent)
-            xyz_coordinates_child[x] -= 1
+            xy_coordinates_child = list(xy_coordinates_parent)
+            xy_coordinates_child[x] -= 1
 
         if parent_slot == DS.RIGHT:
             child_slot = DS.LEFT
-            xyz_coordinates_child = list(xyz_coordinates_parent)
-            xyz_coordinates_child[x] += 1
-
-        if parent_slot == DS.FRONT:
-            child_slot = DS.BACK
-            xyz_coordinates_child = list(xyz_coordinates_parent)
-            xyz_coordinates_child[y] += 1
-
-        if parent_slot == DS.BACK:
-            child_slot = DS.FRONT
-            xyz_coordinates_child = list(xyz_coordinates_parent)
-            xyz_coordinates_child[y] -= 1
+            xy_coordinates_child = list(xy_coordinates_parent)
+            xy_coordinates_child[x] += 1
 
         if parent_slot == DS.UP:
             child_slot = DS.DOWN
-            xyz_coordinates_child = list(xyz_coordinates_parent)
-            xyz_coordinates_child[z] += 1
+            xy_coordinates_child = list(xy_coordinates_parent)
+            xy_coordinates_child[y] += 1
 
         if parent_slot == DS.DOWN:
             child_slot = DS.UP
-            xyz_coordinates_child = list(xyz_coordinates_parent)
-            xyz_coordinates_child[z] -= 1
+            xy_coordinates_child = list(xy_coordinates_parent)
+            xy_coordinates_child[y] -= 1
 
-        return xyz_coordinates_child, child_slot
+        return xy_coordinates_child, child_slot
 
     def maternal_injection(self):
 
@@ -413,8 +402,8 @@ class GRN:
         # chosen initial cell is offphase, to counteract phase bias of anternation
         first_cell = Cell(voxel_type=self.structural_products['offphase_muscle'],
                           parent_cell=None,
-                          xyz_coordinates=middle_pos)
-        first_cell.xyz_coordinates = middle_pos
+                          xy_coordinates=middle_pos)
+        first_cell.xy_coordinates = middle_pos
         # distributes injection among diffusion sites
         first_cell.transcription_factors[mother_tf_label] = \
             [mother_tf_injection/GRN.diffusion_sites_qt] * GRN.diffusion_sites_qt
@@ -452,29 +441,25 @@ class GRN:
 
 class Cell:
 
-    def __init__(self, voxel_type, parent_cell, xyz_coordinates):
+    def __init__(self, voxel_type, parent_cell, xy_coordinates):
         self.voxel_type = voxel_type
         self.transcription_factors = {}
         self.original_genes = []
-        self.xyz_coordinates = xyz_coordinates
+        self.xy_coordinates = xy_coordinates
         self.parent_cell = parent_cell
         self.children = [None] * GRN.diffusion_sites_qt
 
 
 class DS:
-    UP = 0
-    DOWN = 1
-    LEFT = 2
-    RIGHT = 3
-    FRONT = 4
-    BACK = 5
+    LEFT = 0
+    RIGHT = 1
+    UP = 2
+    DOWN = 3
 
-# voxels  perspective
-# Np = [x,y,z]
-#
-# X: 4,1,1: left/right
-# Y: 1,4,1: back/front
-# Z: 1,1,4: up/down
+# voxel perspective (2D)
+# Np = [x, y]
+# x: left/right
+# y: up/down
 
 
 ###### operators ######
@@ -659,8 +644,6 @@ def mutation_type1(rng, genome):
         genome[position2] = position_v
 
     return genome
-
-
 
 
 

@@ -5,8 +5,6 @@
 
 # this should be the path for the output files (choose YOUR OWN dir!)
 out_path="/working_data"
-docker_path="/workspace"
-
 # DO NOT use underline ( _ ) in the study and experiments names
 # delimiter of three vars below is coma. example:
 #experiments="exp1,epx2"
@@ -31,7 +29,7 @@ for i in $(seq 1 $nruns);
 do
   runs=("${runs}${i},")
 done
-runs=${runs::-1}
+runs="${runs%,}"
 
 watchruns=$runs
 
@@ -62,7 +60,11 @@ max_voxels=25
 
 cube_face_size=4
 
-simulation_time=0
+evogym_steps=500
+
+# Single parallelism knob for simulation:
+# 0 = auto (uses available CPU cores), N = fixed worker count.
+evogym_num_workers=0
 
 run_simulation=0
 

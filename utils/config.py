@@ -9,17 +9,9 @@ class Config():
         parser.add_argument(
             "--out_path",
             required=False,
-            default="/working_data",
+            default="tmp_out",
             type=str,
             help="path for results files"
-        )
-
-        parser.add_argument(
-            "--docker_path",
-            required=False,
-            default="/workspace",
-            type=str,
-            help="path for docker"
         )
 
         parser.add_argument(
@@ -64,13 +56,6 @@ class Config():
             "--num_generations",
             required=False,
             default=10,
-            type=int,
-        )
-
-        parser.add_argument(
-            "--simulation_time",
-            required=False,
-            default=2,
             type=int,
         )
 
@@ -138,7 +123,7 @@ class Config():
         parser.add_argument(
             "--fitness_metric",
             required=False,
-            default="novelty", #displacement
+            default="displacement",
             type=str,
         )
 
@@ -204,6 +189,78 @@ class Config():
             default=1,
             type=int,
             help="If 0, runs optimizer without simulating robots, so behavioral measures are none."
+        )
+
+        parser.add_argument(
+            "--evogym_num_workers",
+            required=False,
+            default=0,
+            type=int,
+            help="EvoGym batch workers. 0=auto based on machine CPU."
+        )
+
+        parser.add_argument(
+            "--evogym_steps",
+            required=False,
+            default=500,
+            type=int,
+            help="Physics steps per robot evaluation in EvoGym."
+        )
+
+        parser.add_argument(
+            "--evogym_init_x",
+            required=False,
+            default=3,
+            type=int,
+            help="Initial robot x position in EvoGym world."
+        )
+
+        parser.add_argument(
+            "--evogym_init_y",
+            required=False,
+            default=1,
+            type=int,
+            help="Initial robot y position in EvoGym world."
+        )
+
+        parser.add_argument(
+            "--evogym_action_bias",
+            required=False,
+            default=1.0,
+            type=float,
+            help="Center value for actuator sine controller."
+        )
+
+        parser.add_argument(
+            "--evogym_action_amplitude",
+            required=False,
+            default=0.4,
+            type=float,
+            help="Amplitude for actuator sine controller."
+        )
+
+        parser.add_argument(
+            "--evogym_period_steps",
+            required=False,
+            default=20,
+            type=int,
+            help="Sine period in simulation steps."
+        )
+
+        parser.add_argument(
+            "--evogym_headless",
+            required=False,
+            default=1,
+            type=int,
+            help="1=headless (default), 0=render simulation window for debugging."
+        )
+
+        parser.add_argument(
+            "--evogym_render_mode",
+            required=False,
+            default="screen",
+            type=str,
+            help="Render mode when evogym_headless=0 (screen or human)."
         )
 
         args = parser.parse_args()

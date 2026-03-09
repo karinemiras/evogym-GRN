@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# run this script from the ROOT (inside docker): ./experiments/automation/run-analysis.sh pathPARAMSFILE/PARAMSFILE.sh
-# if u want to run it out of docker, update out_path and docker_path
+# run this script from the repo root:
+# ./experiments/automation/run-analysis.sh path/to/PARAMSFILE.sh
 
 if [ $# -eq 0 ]
   then
@@ -14,8 +14,10 @@ set -a
 source "$params_file"
 set +a
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
-python3 ${docker_path}/experiments/analysis/consolidate.py \
+python3 "${REPO_ROOT}/experiments/analysis/consolidate.py" \
  --study_name "$study_name" \
  --experiments "$experiments" \
  --runs "$runs" \
@@ -35,7 +37,7 @@ papermill "experiments/analysis/analysis.ipynb" \
           -p out_path "$out_path"
 
 
-python3 ${docker_path}/experiments/analysis/snapshots_bests.py \
+python3 "${REPO_ROOT}/experiments/analysis/snapshots_bests.py" \
   --study_name "$study_name" \
   --experiments "$experiments" \
   --voxel_types "$voxel_types" \
@@ -49,7 +51,7 @@ python3 ${docker_path}/experiments/analysis/snapshots_bests.py \
   --plastic "$plastic"
 
 #
-#python3 ${docker_path}/experiments/analysis/bests_snap_draw.py \
+#python3 "${REPO_ROOT}/experiments/analysis/bests_snap_draw.py" \
 #  --study_name "$study_name" \
 #  --experiments "$experiments" \
 #  --runs "$runs" \
@@ -57,7 +59,7 @@ python3 ${docker_path}/experiments/analysis/snapshots_bests.py \
 #  --out_path "$out_path"
 
 
-#python3 ${docker_path}/experiments/analysis/family_tree.py \
+#python3 "${REPO_ROOT}/experiments/analysis/family_tree.py" \
 #  --study_name "$study_name" \
 #  --experiments "$experiments" \
 #  --voxel_types "$voxel_types" \
