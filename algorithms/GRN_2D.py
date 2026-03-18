@@ -508,7 +508,7 @@ def unequal_crossover_prop(
     if promoters_p1:
         cut_p1 = rng.sample(promoters_p1, 1)[0]
 
-        # NEW: randomly choose whether we take head (0..cut+gene) or tail (cut..end)
+        # randomly choose whether we take head (0..cut+gene) or tail (cut..end)
         take_head_p1 = rng.random() < 0.5
 
         if take_head_p1:
@@ -523,7 +523,7 @@ def unequal_crossover_prop(
 
     new_genotype += subset_p1
 
-    # NEW: compute the proportion actually taken from first parent
+    #  compute the proportion actually taken from first parent
     # (relative to its whole genome, excluding concentration)
     #     - If no nucleotides, proportion is 0.0
     prop_from_p1 = (len(subset_p1) / len(p1)) if len(p1) > 0 else 0.0
@@ -531,15 +531,15 @@ def unequal_crossover_prop(
     # ---------- SECOND PARENT: target complementary proportion on a chosen side ----------
     promoters_p2 = get_promoters(p2)
 
-    # NEW: complementary proportion we want from parent 2
+    # complementary proportion we want from parent 2
     target_prop_p2 = 1.0 - prop_from_p1
     target_len_p2 = int(round(target_prop_p2 * len(p2))) if len(p2) > 0 else 0
 
-    # NEW: randomly decide if we aim for head (first) or tail (second) part of parent 2
+    # randomly decide if we aim for head (first) or tail (second) part of parent 2
     take_head_p2 = rng.random() < 0.5
 
     if promoters_p2 and len(p2) > 0:
-        # NEW: pick a promoter cut that best matches the target length on the chosen side
+        # pick a promoter cut that best matches the target length on the chosen side
         best_cut = None
         best_diff = None
 
@@ -646,8 +646,26 @@ def mutation_type1(rng, genome):
     return genome
 
 
+# TEST
+if __name__ == "__main__":
+    import random
 
+    rng = random.Random(3)
+    genome = initialization(rng, ini_genome_size=80)
 
+    cells = GRN(
+        max_voxels=36,
+        cube_face_size=6,
+        genotype=genome,
+        voxel_types="withbone",
+        env_conditions="",
+        plastic=0,
+    ).develop()
 
+    phenotype = np.zeros(cells.shape, dtype=int)
+    for idx, value in np.ndenumerate(cells):
+        phenotype[idx] = value.voxel_type if value != 0 else 0
 
-
+    print("RANDOM GENOME LENGTH (GRN vector):", len(genome))
+    print("BODY SHAPE/MATERIALS:")
+    print(phenotype)
