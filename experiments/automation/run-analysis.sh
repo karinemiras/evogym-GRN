@@ -17,6 +17,12 @@ set +a
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
+# Matplotlib/fontconfig need writable cache dirs when Codex or macOS sandboxing
+# cannot write to the default user cache locations.
+export MPLCONFIGDIR="${out_path}/${study_name}/analysis/.matplotlib"
+export XDG_CACHE_HOME="${out_path}/${study_name}/analysis/.cache"
+mkdir -p "$MPLCONFIGDIR" "$XDG_CACHE_HOME"
+
 python3 "${REPO_ROOT}/experiments/analysis/consolidate.py" \
  --study_name "$study_name" \
  --experiments "$experiments" \
@@ -24,14 +30,11 @@ python3 "${REPO_ROOT}/experiments/analysis/consolidate.py" \
  --out_path "$out_path" \
  --final_gen "$final_gen";
 
-
-
 papermill "experiments/analysis/analysis.ipynb" \
           "experiments/analysis/analysis-executed.ipynb" \
           -p study_name  "$study_name" \
           -p experiments "$experiments" \
           -p runs "$runs" \
-          -p voxel_types "$voxel_types" \
           -p generations "$generations" \
           -p final_gen "$final_gen" \
           -p out_path "$out_path"
@@ -40,7 +43,6 @@ papermill "experiments/analysis/analysis.ipynb" \
 python3 "${REPO_ROOT}/experiments/analysis/snapshots_bests.py" \
   --study_name "$study_name" \
   --experiments "$experiments" \
-  --voxel_types "$voxel_types" \
   --runs "$runs" \
   --generations "$generations" \
   --out_path "$out_path" \
@@ -50,24 +52,10 @@ python3 "${REPO_ROOT}/experiments/analysis/snapshots_bests.py" \
   --algorithm "$algorithm" \
   --plastic "$plastic"
 
-#
-#python3 "${REPO_ROOT}/experiments/analysis/bests_snap_draw.py" \
-#  --study_name "$study_name" \
-#  --experiments "$experiments" \
-#  --runs "$runs" \
-#  --generations "$generations" \
-#  --out_path "$out_path"
 
-
-#python3 "${REPO_ROOT}/experiments/analysis/family_tree.py" \
-#  --study_name "$study_name" \
-#  --experiments "$experiments" \
-#  --voxel_types "$voxel_types" \
-#  --runs "$runs" \
-#  --generations "$generations" \
-#  --out_path "$out_path" \
-#  --max_voxels "$max_voxels" \
-#  --cube_face_size "$cube_face_size" \
-#  --env_conditions "$env_conditions" \
-#  --algorithm "$algorithm" \
-#  --plastic "$plastic"
+python3 "${REPO_ROOT}/experiments/analysis/bests_snap_draw.py" \
+  --study_name "$study_name" \
+  --experiments "$experiments" \
+  --runs "$runs" \
+  --generations "$generations" \
+  --out_path "$out_path"

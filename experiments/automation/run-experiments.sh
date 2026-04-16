@@ -19,17 +19,11 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 mkdir -p "${out_path}/${study_name}" "${out_path}/${study_name}/analysis"
 
 IFS=',' read -r -a EXP_LIST <<< "${experiments}"
-IFS=',' read -r -a voxel_types_LIST <<< "${voxel_types}"
-IFS=',' read -r -a ustatic_LIST <<< "${ustatic}"
-IFS=',' read -r -a udynamic_LIST <<< "${udynamic}"
 IFS=',' read -r -a COND_LIST <<< "${env_conditions}"
 IFS=',' read -r -a RUN_LIST <<< "${runs}"
 
-if [[ ${#EXP_LIST[@]} -ne ${#voxel_types_LIST[@]} || \
-      ${#EXP_LIST[@]} -ne ${#COND_LIST[@]} || \
-      ${#EXP_LIST[@]} -ne ${#ustatic_LIST[@]} || \
-      ${#EXP_LIST[@]} -ne ${#udynamic_LIST[@]} ]]; then
-  echo "Error: experiments, voxel_types, env_conditions, ustatic, udynamic must have same length."
+if [[ ${#EXP_LIST[@]} -ne ${#COND_LIST[@]} ]]; then
+  echo "Error: experiments and env_conditions must have same length."
   exit 1
 fi
 
@@ -37,9 +31,6 @@ echo ">> Parallelism policy: single run at a time; intra-run CPU parallelism via
 
 for idx in "${!EXP_LIST[@]}"; do
   exp="${EXP_LIST[$idx]}"
-  voxel_type="${voxel_types_LIST[$idx]}"
-  ustatic_v="${ustatic_LIST[$idx]}"
-  udynamic_v="${udynamic_LIST[$idx]}"
   cond="${COND_LIST[$idx]}"
 
   for run in "${RUN_LIST[@]}"; do
@@ -66,9 +57,6 @@ for idx in "${!EXP_LIST[@]}"; do
       --crossover_prob "${crossover_prob}"
       --mutation_prob "${mutation_prob}"
       --max_voxels "${max_voxels}"
-      --voxel_types "${voxel_type}"
-      --udynamic "${udynamic_v}"
-      --ustatic "${ustatic_v}"
       --cube_face_size "${cube_face_size}"
       --run_simulation "${run_simulation}"
     )

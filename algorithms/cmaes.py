@@ -21,23 +21,22 @@ from utils.config import Config
 class CMAES(Experiment):
     def __init__(self, args=None):
         # Keep args/CLI behavior identical
-        self.args = Config()._get_params()
+        self.args = args if args is not None else Config()._get_params()
         super().__init__(self.args)  # NOTE: rng is created in recover_db(), not here
 
         # experiment-level params used by GRN logic (unchanged)
         self.PROMOTOR_THRESHOLD = 0.95
 
         # Keep “initial genome size” as the CMA-ES dimension
-        self.GENOME_SIZE = 300
+        self.GENOME_SIZE = 200
         self.N = self.GENOME_SIZE
 
-        # CMA-ES step-size (values mapped to [0,1] via sigmoid later)
-        self.sigma0 = 0.2
+        # CMA-ES step-size for genome values bounded directly in [0,1].
+        self.sigma0 = 0.1
 
         # carry over all params as before
         self.cube_face_size = self.args.cube_face_size
         self.max_voxels = self.args.max_voxels
-        self.tfs = self.args.tfs
         self.plastic = self.args.plastic
         self.env_conditions = self.args.env_conditions
 
@@ -50,27 +49,28 @@ class CMAES(Experiment):
         self.es = None
 
     # ---------- GRN dev (unchanged) ----------
-    def develop_phenotype(self, genome, tfs):
+    def develop_phenotype(self, genome):
         phenotype = GRN(
             promoter_threshold=self.PROMOTOR_THRESHOLD,
             max_voxels=self.max_voxels,
             cube_face_size=self.cube_face_size,
-            tfs=tfs,
             genotype=genome,
             env_conditions=self.env_conditions,
             plastic=self.plastic,
         ).develop()
 
         phenotype_materials = np.zeros(phenotype.shape, dtype=int)
+        phenotype_phase_offsets = np.zeros(phenotype.shape, dtype=np.float32)
         for index, value in np.ndenumerate(phenotype):
-            phenotype_materials[index] = value.voxel_type if value != 0 else 0
-        return phenotype_materials
+            if value != 0:
+                phenotype_materials[index] = value.voxel_type
+                phenotype_phase_offsets[index] = value.phase_offset
+        return phenotype_materials, phenotype_phase_offsets
 
     # ---------- CMA vector -> Individual ----------
     def vector_to_individual(self, x, generation):
-        # Map CMA internal real vector -> [0,1] genotype expected by your GRN encoding
-        x = np.asarray(x, dtype=float)
-        #x = 1.0 / (1.0 + np.exp(-x))  # sigmoid -> [0,1]
+        # Keep the genome in the [0,1] range expected by the GRN encoding.
+        x = np.clip(np.asarray(x, dtype=float), 0.0, 1.0)
         genome = list(x)
 
         self.id_counter += 1
@@ -103,16 +103,13 @@ class CMAES(Experiment):
             start_gen = last_gen + 1
             best = max(recovered_population, key=lambda ind: ind.fitness)
 
-            # best.genome is stored after sigmoid mapping, so it should be in [0,1]
+            # best.genome is stored directly in [0,1].
             g = np.asarray(best.genome, dtype=float)
             if g.size != self.N:
                 # If dimensions mismatch, fall back to initializer mean
                 x0 = np.asarray(initialization(self.rng, self.GENOME_SIZE), dtype=float)
             else:
-                # inverse sigmoid (logit) to move back to CMA internal space
-                eps = 1e-9
-                g = np.clip(g, eps, 1.0 - eps)
-                x0 = np.log(g / (1.0 - g))
+                x0 = np.clip(g, 0.0, 1.0)
 
             self.es = cma.CMAEvolutionStrategy(x0, self.sigma0, self.cma_opts)
 
@@ -133,8 +130,8 @@ class CMAES(Experiment):
 
             # Develop + metrics + prepare sim (same pipeline)
             for ind in individuals:
-                ind.phenotype = self.develop_phenotype(ind.genome, self.tfs)
-                genopheno_abs_metrics(ind)
+                ind.phenotype, ind.phenotype_phase_offsets = self.develop_phenotype(ind.genome)
+                genopheno_abs_metrics(ind, self.args)
 
                 if self.args.run_simulation:
                     prepare_robot_files(ind, self.args)

@@ -13,17 +13,11 @@ out_path="/Users/karinemiras/projects/evogym/tmp_out"
 # exps order is the same for all three vars
 # exps names should not be fully contained in each other
 
-study_name="evobots"
+study_name="basic"
 experiments="evobots"
-
-# one voxel_types definition per experiment
-voxel_types="withbone"
 
 # one set of conditions per experiment
 env_conditions="none"
-
-ustatic="1"
-udynamic="0.8"
 
 ####
 
@@ -52,7 +46,7 @@ offspring_size="100"
 
 # gens for box-plots, snapshots, videos (by default the last gen)
 #generations="1,$num_generations"
-generations="1,$num_generations"
+generations="$num_generations"
 
 # max gen to filter line-plots  (by default the last gen)
 final_gen="$num_generations"
@@ -61,9 +55,9 @@ mutation_prob=0.9
 
 crossover_prob=1
 
-max_voxels=125
+max_voxels=36
 
-cube_face_size=5
+cube_face_size=6
 
 evogym_steps=500
 

@@ -37,7 +37,6 @@ class Experiment:
         self.out_path = f"{args.out_path}/{args.study_name}/{args.experiment_name}/run_{args.run}"
         os.makedirs(self.out_path, exist_ok=True)
         self.db_path = os.path.join(self.out_path, f'run_{args.run}')
-        self.voxel_types = args.voxel_types
 
     def recover_db(self):
         # by default sqlalquemy does not overwrite db, but recovers it if existent instead
@@ -110,7 +109,11 @@ class Experiment:
             for r, gs in rows:
                 ind = self._individual_from_robot(r)
                 # rebuild phenotype
-                ind.phenotype = self.develop_phenotype(ind.genome, self.voxel_types)
+                developed = self.develop_phenotype(ind.genome)
+                if isinstance(developed, tuple):
+                    ind.phenotype, ind.phenotype_phase_offsets = developed
+                else:
+                    ind.phenotype = developed
 
                 # --- pass-through for relative metrics ---
                 for m in METRICS_REL:
@@ -163,4 +166,3 @@ class Experiment:
             for m in METRICS_REL:
                 data[m] = getattr(ind, m, None)
             s.merge(GenerationSurvivor(**data))
-

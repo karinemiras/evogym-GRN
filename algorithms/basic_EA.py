@@ -29,7 +29,7 @@ class EA(Experiment):
 
         # experiment-level params used by EA logic
         self.MAX_GENOME_SIZE = 1000
-        self.INI_GENOME_SIZE = 300
+        self.INI_GENOME_SIZE = 150
         self.PROMOTOR_THRESHOLD = 0.95
 
         self.novelty_archive = [] # TODO: include in recovery
@@ -37,7 +37,6 @@ class EA(Experiment):
 
         self.cube_face_size = self.args.cube_face_size
         self.max_voxels = self.args.max_voxels
-        self.voxel_types = self.args.voxel_types
         self.plastic = self.args.plastic
         self.env_conditions = self.args.env_conditions
         self.population_size = self.args.population_size
@@ -49,27 +48,26 @@ class EA(Experiment):
         self.fitness_metric = self.args.fitness_metric
         # keep top-N by displacement each generation (0 disables)
         self.elitism = getattr(self.args, "elitism", 3)
-        self.ustatic = self.args.ustatic
-        self.udynamic = self.args.udynamic
-
     # ---------- EA-specific utilities ----------
 
-    def develop_phenotype(self, genome, voxel_types):
+    def develop_phenotype(self, genome):
         phenotype = GRN(
             promoter_threshold=self.PROMOTOR_THRESHOLD,
             max_voxels=self.max_voxels,
             cube_face_size=self.cube_face_size,
-            voxel_types=voxel_types,
             genotype=genome,
             env_conditions=self.env_conditions,
             plastic=self.plastic,
         ).develop()
 
         phenotype_materials = np.zeros(phenotype.shape, dtype=int)
+        phenotype_phase_offsets = np.zeros(phenotype.shape, dtype=np.float32)
         for index, value in np.ndenumerate(phenotype):
-            phenotype_materials[index] = value.voxel_type if value != 0 else 0
+            if value != 0:
+                phenotype_materials[index] = value.voxel_type
+                phenotype_phase_offsets[index] = value.phase_offset
 
-        return phenotype_materials
+        return phenotype_materials, phenotype_phase_offsets
 
     def initialize_population(self, size, generation):
         individuals = []
@@ -120,7 +118,7 @@ class EA(Experiment):
             self.update_novelty_archive(population)
 
             for ind in population:
-                ind.phenotype = self.develop_phenotype(ind.genome, self.voxel_types)
+                ind.phenotype, ind.phenotype_phase_offsets = self.develop_phenotype(ind.genome)
                 genopheno_abs_metrics(ind, self.args)
 
                 if self.args.run_simulation:
@@ -165,7 +163,7 @@ class EA(Experiment):
                 self.mutate(child)
                 offspring.append(child)
 
-                child.phenotype = self.develop_phenotype(child.genome, self.voxel_types)
+                child.phenotype, child.phenotype_phase_offsets = self.develop_phenotype(child.genome)
                 genopheno_abs_metrics(child, self.args)
                 
                 if self.args.run_simulation:
@@ -238,9 +236,6 @@ if __name__ == "__main__":
     minutes = int((elapsed % 3600) // 60)
     seconds = elapsed % 60
     print(f"\n[RUN-TIME]  {hours}h {minutes}m {seconds:.1f}s")
-
-
-
 
 
 

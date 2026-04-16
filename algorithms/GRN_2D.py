@@ -4,15 +4,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
-from algorithms.voxel_types import VOXEL_TYPES, VOXEL_TYPES_NOBONE, TF_WEIGHTS, TF_WEIGHTS_NOBONE
+from algorithms.voxel_types import VOXEL_TYPES, TF_WEIGHTS
 
 # a Gene Regulatory Network
 class GRN:
     # 2D grid (left/right/up/down)
     diffusion_sites_qt = 4
 
-    def __init__(self, promoter_threshold=0.95, max_voxels=27, cube_face_size=3,
-                  genotype=None, voxel_types='withbone', env_conditions=None, plastic=None):
+    def __init__(self, promoter_threshold=0.95, max_voxels=25, cube_face_size=5,
+                  genotype=None, env_conditions=None, plastic=None):
 
         self.max_voxels = max_voxels
         self.genotype = genotype
@@ -41,17 +41,17 @@ class GRN:
         # number of regulatory tfs
         self.regulatory_products = 2
 
-        if voxel_types == 'withbone':
-            self.structural_products = VOXEL_TYPES
-            self.tf_weights = TF_WEIGHTS
-        if voxel_types == 'nobone':
-            self.structural_products = VOXEL_TYPES_NOBONE
-            self.tf_weights = TF_WEIGHTS_NOBONE
+        self.structural_products = VOXEL_TYPES
+        self.tf_weights = TF_WEIGHTS
+        self.muscle_products = {
+            self.structural_products['muscle_h'],
+            self.structural_products['muscle_v'],
+        }
 
-        # structural_tfs use initial indexes (excludes voxel_type offphase
-        # and regulatory tfs uses final (leftover) indexes
+        # structural_tfs use initial indexes; regulatory tfs use final
+        # leftover indexes.
         self.structural_tfs = []
-        for tf in range(1, len(self.structural_products)):
+        for tf in range(1, len(self.structural_products) + 1):
             self.structural_tfs.append(f'TF{tf}')
 
         self.increase_scaling = 100
@@ -124,7 +124,6 @@ class GRN:
         self.genes = np.array(self.genes)
 
     def build_tf_limits(self, structural_products, regulatory_products, tf_weights):
-        structural_products = dict(list(structural_products.items())[:-1])
         weights = []
         for name in structural_products:
             weights.append(float(tf_weights[name]))
@@ -301,7 +300,7 @@ class GRN:
     def place_voxel(self, parent_cell):
         product_concentrations = []
 
-        for idm in range(0, len(self.structural_products)-1): # excludes voxel_type offphase
+        for idm in range(0, len(self.structural_products)):
             # sum concentration of all diffusion sites
             concentration = sum(parent_cell.transcription_factors[self.structural_tfs[idm]]) \
                 if parent_cell.transcription_factors.get(self.structural_tfs[idm]) else 0
@@ -329,21 +328,24 @@ class GRN:
 
                     if self.phenotype[tuple(potential_child_coord)] == 0:
                         key, voxel_type = list(self.structural_products.items())[idx_max]
+                        phase_offset = 0.0
 
-                        # --- offphase alternation: starts with phase ---
-                        if voxel_type == self.structural_products['phase_muscle']:
+                        # Offphase is a controller/brain flag, not another body material.
+                        # One counter is shared by horizontal and vertical muscles.
+                        if voxel_type in self.muscle_products:
                             if self._phase_run >= self.offphase_alternation_k:
-                                voxel_type = self.structural_products['offphase_muscle']
+                                phase_offset = np.pi
                                 self._phase_run = 0
                             else:
                                 self._phase_run += 1
 
                         self.quantity_voxels += 1
-                        self.new_cell(voxel_type, parent_cell, slot, child_slot, potential_child_coord)
+                        self.new_cell(voxel_type, parent_cell, slot, child_slot, potential_child_coord, phase_offset)
 
-    def new_cell(self, voxel_type, parent_cell, parent_slot, child_slot, xy_coordinates):
+    def new_cell(self, voxel_type, parent_cell, parent_slot, child_slot, xy_coordinates, phase_offset=0.0):
 
-        new_cell = Cell(voxel_type=voxel_type, parent_cell=parent_cell, xy_coordinates=xy_coordinates)
+        new_cell = Cell(voxel_type=voxel_type, parent_cell=parent_cell,
+                        xy_coordinates=xy_coordinates, phase_offset=phase_offset)
         self.phenotype[tuple(xy_coordinates)] = new_cell
 
         # share concentrations in diffusion site of parent with child
@@ -400,9 +402,10 @@ class GRN:
         # TODO: do we really need to force the first cell?
         middle_pos = [s // 2 for s in self.phenotype.shape]
         # chosen initial cell is offphase, to counteract phase bias of anternation
-        first_cell = Cell(voxel_type=self.structural_products['offphase_muscle'],
+        first_cell = Cell(voxel_type=self.structural_products['muscle_h'],
                           parent_cell=None,
-                          xy_coordinates=middle_pos)
+                          xy_coordinates=middle_pos,
+                          phase_offset=np.pi)
         first_cell.xy_coordinates = middle_pos
         # distributes injection among diffusion sites
         first_cell.transcription_factors[mother_tf_label] = \
@@ -441,8 +444,9 @@ class GRN:
 
 class Cell:
 
-    def __init__(self, voxel_type, parent_cell, xy_coordinates):
+    def __init__(self, voxel_type, parent_cell, xy_coordinates, phase_offset=0.0):
         self.voxel_type = voxel_type
+        self.phase_offset = phase_offset
         self.transcription_factors = {}
         self.original_genes = []
         self.xy_coordinates = xy_coordinates
@@ -654,18 +658,22 @@ if __name__ == "__main__":
     genome = initialization(rng, ini_genome_size=80)
 
     cells = GRN(
-        max_voxels=36,
-        cube_face_size=6,
+        max_voxels=25,
+        cube_face_size=5,
         genotype=genome,
-        voxel_types="withbone",
         env_conditions="",
         plastic=0,
     ).develop()
 
     phenotype = np.zeros(cells.shape, dtype=int)
+    phase_offsets = np.zeros(cells.shape, dtype=np.float32)
     for idx, value in np.ndenumerate(cells):
-        phenotype[idx] = value.voxel_type if value != 0 else 0
+        if value != 0:
+            phenotype[idx] = value.voxel_type
+            phase_offsets[idx] = value.phase_offset
 
     print("RANDOM GENOME LENGTH (GRN vector):", len(genome))
     print("BODY SHAPE/MATERIALS:")
     print(phenotype)
+    print("BRAIN PHASE OFFSETS:")
+    print(phase_offsets)

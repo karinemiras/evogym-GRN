@@ -1,4 +1,6 @@
-# Base (GRN + EA with EvoGym simulation)
+(in the instructions below, the folder referred to as 'base' holds the current repo)
+
+# Base (GRN + EA with simulation connection)
 
 This folder contains the evolutionary pipeline:
 - genome/GRN development (`algorithms/GRN_2D.py`)
@@ -19,10 +21,10 @@ Core Python packages used by `base`:
 - `cma`
 - `gymnasium`
 
-Plus local EvoGym package from this repo:
-- `../evogym`
+Plus EvoGym:
+- `../evogym` (install using original instructions: https://evolutiongym.github.io/)
 
-## Environment setup (recommended)
+## Environment setup  
 
 From repository root:
 
@@ -30,26 +32,10 @@ From repository root:
 python3.9 -m venv --system-site-packages .venv
 source .venv/bin/activate
 pip install gymnasium scikit-learn lxml cma
-pip install -e ./evogym --no-deps --no-build-isolation
-```
-
-If needed, install base requirements too:
-
-```bash
 pip install -r ./base/requirements.txt
 ```
 
-## Quick test
-
-Run the prep test (builds one random robot payload in memory and prints arrays):
-
-```bash
-cd base
-source ../.venv/bin/activate
-python simulation/prepare_robot_files.py
-```
-
-Run a small simulation smoke test:
+Run a mini test: use random GRN to construct body+brain and then simulate it
 
 ```bash
 cd base
@@ -66,10 +52,9 @@ from simulation.simulation_resources import simulate_evogym_batch
 rng = random.Random(3)
 genome = initialization(rng, ini_genome_size=80)
 phenotype_cells = GRN(
-    max_voxels=36,
-    cube_face_size=6,
+    max_voxels=25,
+    cube_face_size=5,
     genotype=genome,
-    voxel_types="withbone",
     env_conditions="",
     plastic=0,
 ).develop()
@@ -87,7 +72,6 @@ args = SimpleNamespace(
     study_name="demo",
     experiment_name="smoke",
     run=1,
-    voxel_types="withbone",
     evogym_steps=500,
     evogym_num_workers=1,
     evogym_init_x=3,
@@ -95,6 +79,7 @@ args = SimpleNamespace(
     evogym_action_bias=1.0,
     evogym_action_amplitude=0.4,
     evogym_period_steps=20,
+    evogym_headless=0,
 )
 
 prepare_robot_files(ind, args)
@@ -103,15 +88,4 @@ print("displacement:", ind.displacement)
 PY
 ```
 
-## Performance controls (Mac/Linux)
-
-Use CLI args in experiment runs:
-- `--evogym_num_workers` (0 = auto, otherwise fixed worker count)
-- `--evogym_steps`
-- `--evogym_init_x`
-- `--evogym_init_y`
-- `--evogym_action_bias`
-- `--evogym_action_amplitude`
-- `--evogym_period_steps`
-
-For laptops, set workers below max cores to reduce thermal throttling.
+ 

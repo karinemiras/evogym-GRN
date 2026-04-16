@@ -6,13 +6,13 @@ from sklearn.neighbors import KDTree
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
-from algorithms.voxel_types import VOXEL_TYPES, VOXEL_TYPES_NOBONE
+from algorithms.voxel_types import VOXEL_TYPES
 
 METRICS_ABS = [
     # genotypic
     "genome_size",
 
-    # behavioral
+    # behavioral: forward center-of-mass displacement along EvoGym x axis, in voxel-length units
     "displacement",
 
     # phenotypic
@@ -21,12 +21,12 @@ METRICS_ABS = [
     "bone_prop",
     "fat_count",
     "fat_prop",
-    "fat2_count",
-    "fat2_prop",
-    "phase_muscle_count",
-    "phase_muscle_prop",
-    "offphase_muscle_count",
-    "offphase_muscle_prop",
+    "muscle_h_count",
+    "muscle_h_prop",
+    "muscle_v_count",
+    "muscle_v_prop",
+    "muscle_count",
+    "muscle_prop",
 ]
 
 METRICS_REL = [
@@ -34,21 +34,19 @@ METRICS_REL = [
                 "fitness",
                 "age",
                 # "dominated_disp_age",
-                "dominated_disp_nov",
-                "novelty",
-                "novelty_weighted"
+                # "dominated_disp_nov",
+                # "novelty",
+                # "novelty_weighted"
                ]
 
 # metrics relative to other individuals or factors like time
 def relative_metrics(population, args, generation, novelty_archive=None):
     uniqueness(population)
-    novelty(population, novelty_archive)
-    novelty_weighted(population)
+    # novelty(population, novelty_archive)
+    # novelty_weighted(population)
     age(population, generation)
     # pareto_dominance_count( population,
     #                         objectives=(("age", "min"), ("displacement", "max")), out_attr="dominated_disp_age")
-    pareto_dominance_count(population,
-                           objectives=(("novelty", "max"), ("displacement", "max")), out_attr="dominated_disp_nov")
     set_fitness(population, args.fitness_metric)
 
 
@@ -64,21 +62,18 @@ def genopheno_abs_metrics(individual, args):
 
 
 def behavior_abs_metrics(population):
-    # as center-of-mass displacement in meters
+    # displacement is assigned by simulation_resources as forward COM x displacement in voxel-length units
     # TODO: implement others and treat for -inf
     pass
 
 def update_material_metrics(individual, args):
-    if args.voxel_types == 'withbone':
-        voxel_types = VOXEL_TYPES
-    if args.voxel_types == 'nobone':
-        voxel_types = VOXEL_TYPES_NOBONE
+    material_ids = VOXEL_TYPES
 
     grid = np.asarray(individual.phenotype, dtype=int)
     filled_total = int((grid != 0).sum())
     individual.filled_total = filled_total
 
-    for name, mid in voxel_types.items():
+    for name, mid in material_ids.items():
 
         count = int((grid == mid).sum())
         prop = (count / filled_total) if filled_total > 0 else 0.0
@@ -86,14 +81,23 @@ def update_material_metrics(individual, args):
         setattr(individual, f"{name}_count", count)
         setattr(individual, f"{name}_prop", round(prop,2))
 
+    # Aggregate actuator material regardless of controller phase.
+    muscle_count = (
+        individual.muscle_h_count
+        + individual.muscle_v_count
+    )
+    individual.muscle_count = muscle_count
+    individual.muscle_prop = round((muscle_count / filled_total) if filled_total > 0 else 0.0, 2)
+
 def set_fitness(population, fitness_metric):
     for ind in population:
         ind.fitness = float(getattr(ind, fitness_metric, None))
 
 def test_validity(individual):
-    has_phase_muscle = individual.phase_muscle_count >= 1
-    has_offphase_muscle   = individual.offphase_muscle_count >= 1
-    individual.valid = has_phase_muscle and has_offphase_muscle
+    has_muscle = (individual.muscle_h_count + individual.muscle_v_count) >= 1
+    phases = getattr(individual, "phenotype_phase_offsets", None)
+    has_offphase_muscle = bool(phases is not None and np.any(np.asarray(phases) > 0))
+    individual.valid = has_muscle and has_offphase_muscle
 
 def age(population, generation):
     for ind in population:
@@ -225,6 +229,3 @@ def pareto_dominance_count(
             if dominates(a, population[j]):
                 cnt += 1
         setattr(a, out_attr, cnt)
-
-
-

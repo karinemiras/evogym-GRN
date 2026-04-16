@@ -69,7 +69,7 @@ class Config():
         parser.add_argument(
             "--max_voxels",
             required=False,
-            default=64,
+            default=25,
             type=int,
             help="",
         )
@@ -77,17 +77,9 @@ class Config():
         parser.add_argument(
             "--cube_face_size",
             required=False,
-            default=4,
+            default=5,
             type=int,
             help="",
-        )
-
-        parser.add_argument(
-            "--voxel_types",
-            required=False,
-            default="withbone",
-            type=str,
-            help="list of voxel_types config",
         )
 
         parser.add_argument(
@@ -149,22 +141,6 @@ class Config():
             default="",
             type=str,
             help="list of experiment_name",
-        )
-
-        parser.add_argument(
-            "--ustatic",
-            required=False,
-            default=1,
-            type=float,
-            help="static friction"
-        )
-
-        parser.add_argument(
-            "--udynamic",
-            required=False,
-            default=0.8,
-            type=float,
-            help="dynamic friction"
         )
 
         parser.add_argument(

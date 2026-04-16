@@ -13,7 +13,18 @@ sys.path.append(str(ROOT))
 from algorithms.EA_classes import Robot, GenerationSurvivor
 from utils.draw import draw_phenotype
 from utils.config import Config
-from algorithms.voxel_types import VOXEL_TYPES, VOXEL_TYPES_COLORS, VOXEL_TYPES_NOBONE, VOXEL_TYPES_COLORS_NOBONE
+from algorithms.voxel_types import VOXEL_TYPES, VOXEL_TYPES_COLORS
+
+
+def get_algorithm_class(module, algorithm_name):
+    class_name_by_algorithm = {
+        "basic_EA": "EA",
+        "cmaes": "CMAES",
+    }
+    class_name = class_name_by_algorithm.get(algorithm_name)
+    if class_name is None:
+        raise ValueError(f"Unknown algorithm '{algorithm_name}'. Add its class name to snapshots_bests.py.")
+    return getattr(module, class_name)
 
 
 def main():
@@ -23,28 +34,19 @@ def main():
     experiments = args.experiments.split(",")
     runs = list(map(int, args.runs.split(",")))
     generations = list(map(int, args.generations.split(",")))
-    voxel_types_list = args.voxel_types.split(",")
 
     # instantiates the algorithm class with original params to develop the phenotypes
     module_name = f"algorithms.{args.algorithm}"
-    class_name = "EA"
     module = importlib.import_module(module_name)
-    cls = getattr(module, class_name)
-    EA = cls(args)
+    algorithm = get_algorithm_class(module, args.algorithm)(args)
 
-    numberrobots = 50  # top-N per generation
+    numberrobots = 100  # top-N per generation
 
     for exp_idx, experiment_name in enumerate(experiments):
         print(experiment_name)
 
-        voxel_types_for_exp = voxel_types_list[exp_idx]
-
-        if voxel_types_for_exp == 'withbone':
-            voxel_types = VOXEL_TYPES
-            voxel_types_colors = VOXEL_TYPES_COLORS
-        if voxel_types_for_exp == 'nobone':
-            voxel_types = VOXEL_TYPES_NOBONE
-            voxel_types_colors = VOXEL_TYPES_COLORS_NOBONE
+        material_ids = VOXEL_TYPES
+        material_colors = VOXEL_TYPES_COLORS
 
         for run in runs:
             print(" run:", run)
@@ -96,9 +98,10 @@ def main():
                     for idx, (robot_row, surv_row) in enumerate(rows[:numberrobots]):
                         genome = robot_row.genome
 
-                        phenotype = EA.develop_phenotype(genome, voxel_types_for_exp)
+                        developed = algorithm.develop_phenotype(genome)
+                        phenotype = developed[0] if isinstance(developed, tuple) else developed
                         draw_phenotype(phenotype, robot_row.robot_id, args.cube_face_size, idx,
-                                       round(surv_row.fitness, 4), gen_dir, voxel_types, voxel_types_colors)
+                                       round(surv_row.fitness, 4), gen_dir, material_ids, material_colors)
 
 
 if __name__ == "__main__":

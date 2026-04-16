@@ -74,6 +74,7 @@ class Individual:
         self.parent2_id = parent2_id
         self.born_generation = None
         self.phenotype = None
+        self.phenotype_phase_offsets = None
         self.valid = 0    # invalid until successfully evaluated
 
         # EvoGym simulation payload (explicit fields to avoid ad-hoc attributes)
