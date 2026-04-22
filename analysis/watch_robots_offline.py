@@ -10,13 +10,13 @@ from types import SimpleNamespace
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent.parent
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
 
-from algorithms.EA_classes import Individual
-from algorithms.GRN_2D import GRN
+from experimental_setups.EA_classes import Individual
+from experimental_setups.GRN_2D import GRN
 from simulation.prepare_robot_files import prepare_robot_files
-from simulation.simulation_resources import simulate_evogym_batch
+from simulation.offline_simulation import simulate_evogym_batch
 
 PARAM_KEYS = [
     "out_path",
@@ -41,7 +41,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Replay robots from saved DBs in EvoGym.")
     parser.add_argument(
         "--params_file",
-        default=str(ROOT / "experiments" / "locomotion.sh"),
+        default=str(ROOT / "automation" / "setups" / "foraging.sh"),
         help="Path to experiment params .sh file.",
     )
     parser.add_argument(
@@ -131,7 +131,6 @@ def main():
         print("Generations: all")
         print(f"top_k per run: {top_k}")
     print(f"Selected robots total: {len(selected)}")
-    print(f"EvoGym steps: {vis_args.evogym_steps}")
 
     last_query = None
     for idx, entry in enumerate(selected, start=1):

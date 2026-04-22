@@ -10,13 +10,13 @@ from types import SimpleNamespace
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent.parent
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
 
-from algorithms.EA_classes import Individual
-from algorithms.GRN_2D import GRN
-from simulation.prepare_robot_files import prepare_robot_files
-from simulation.simulation_resources import simulate_evogym_batch
+from experimental_setups.EA_classes import Individual
+from experimental_setups.GRN_2D import GRN
+from simulation.prepare_robot_files import prepare_robot_files_online
+from simulation.foraging_ppo import replay_ppo_individual
 
 PARAM_KEYS = [
     "out_path",
@@ -27,21 +27,28 @@ PARAM_KEYS = [
     "plastic",
     "max_voxels",
     "cube_face_size",
+    "fitness_metric",
     "evogym_steps",
-    "evogym_init_x",
-    "evogym_init_y",
     "evogym_action_bias",
     "evogym_action_amplitude",
     "evogym_period_steps",
     "evogym_render_mode",
+    "evogym_freeze_first_frame_seconds",
+    "evogym_add_walls",
+    "evogym_add_ceiling",
+    "evogym_env_width",
+    "evogym_env_height",
+    "ppo_timesteps",
+    "ppo_n_steps",
+    "ppo_batch_size",
 ]
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Replay robots from saved DBs in EvoGym.")
+    parser = argparse.ArgumentParser(description="Replay online foraging robots from saved DBs.")
     parser.add_argument(
         "--params_file",
-        default=str(ROOT / "experiments" / "locomotion.sh"),
+        default=str(ROOT / "automation" / "setups" / "foraging.sh"),
         help="Path to experiment params .sh file.",
     )
     parser.add_argument(
@@ -57,11 +64,18 @@ def parse_args():
         help="CSV generation filter, e.g. '10,20,50'. Empty means use all generations.",
     )
     parser.add_argument(
+        "--metric",
+        type=str,
+        choices=["fitness", "reward", "food_taken", "steps_until_food"],
+        default="reward",
+        help="Metric used to rank saved robots.",
+    )
+    parser.add_argument(
         "--rank_mode",
         type=str,
         choices=["best", "worst"],
         default="best",
-        help="Select best or worst fitness.",
+        help="Select best or worst metric values.",
     )
     parser.add_argument(
         "--render_mode",
@@ -79,21 +93,13 @@ def parse_args():
         "--freeze_first_frame_seconds",
         type=float,
         default=0,
-        help="Render the initial pose for this many seconds before simulation starts.",
+        help="Render the initial pose for this many seconds before PPO replay starts.",
     )
-    # Backward-compatible no-op flags.
-    parser.add_argument("--metric", type=str, default="fitness", help=argparse.SUPPRESS)
-    parser.add_argument("--ascending", type=int, default=0, help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    if str(args.metric).strip().lower() != "fitness":
-        print("[info] --metric is ignored; this viewer ranks by fitness.")
-    if int(args.ascending) != 0:
-        print("[info] --ascending is ignored; use --rank_mode best|worst.")
-
     params = load_params(Path(args.params_file).resolve())
     generations = [int(x) for x in split_csv(args.generations)]
     manual_ids = [int(x) for x in split_csv(args.robot_ids)]
@@ -103,6 +109,7 @@ def main():
     experiments, runs, selected = collect_selected_robots(
         params=params,
         generations=generations,
+        metric=args.metric,
         top_k=top_k,
         worst_first=worst_first,
         manual_ids=manual_ids,
@@ -118,6 +125,7 @@ def main():
     print(f"Study: {params.get('study_name')}")
     print(f"Experiments: {experiments}")
     print(f"Runs: {runs}")
+    print(f"Metric: {args.metric}")
     if manual_ids:
         print(f"Manual robot IDs: {manual_ids}")
     else:
@@ -131,7 +139,6 @@ def main():
         print("Generations: all")
         print(f"top_k per run: {top_k}")
     print(f"Selected robots total: {len(selected)}")
-    print(f"EvoGym steps: {vis_args.evogym_steps}")
 
     last_query = None
     for idx, entry in enumerate(selected, start=1):
@@ -146,7 +153,7 @@ def main():
         replay_robot(entry, vis_args, params, idx, len(selected))
 
 
-def collect_selected_robots(params, generations, top_k, worst_first, manual_ids):
+def collect_selected_robots(params, generations, metric, top_k, worst_first, manual_ids):
     experiments = split_csv(params.get("experiments"))
     runs = [int(x) for x in split_csv(params.get("runs"))]
     env_conditions_list = split_csv(params.get("env_conditions"))
@@ -167,15 +174,11 @@ def collect_selected_robots(params, generations, top_k, worst_first, manual_ids)
                 continue
 
             if manual_ids:
-                rows = fetch_manual_ids(db_file, manual_ids)
-                if not rows:
-                    print(f"[warn] None of the requested IDs found for exp={experiment_name} run={run}")
+                rows = fetch_manual_ids(db_file, manual_ids, metric)
             elif generations:
-                rows = fetch_best_or_worst_per_generation(db_file, generations, top_k, worst_first)
-                if not rows:
-                    print(f"[warn] No survivors found for exp={experiment_name} run={run}")
+                rows = fetch_best_or_worst_per_generation(db_file, generations, metric, top_k, worst_first)
             else:
-                rows = fetch_best_or_worst_per_run(db_file, top_k, worst_first)
+                rows = fetch_best_or_worst_per_run(db_file, metric, top_k, worst_first)
 
             for row in rows:
                 row["experiment_name"] = experiment_name
@@ -186,18 +189,18 @@ def collect_selected_robots(params, generations, top_k, worst_first, manual_ids)
     return experiments, runs, selected
 
 
-def fetch_best_or_worst_per_run(db_file: Path, top_k: int, worst_first: bool):
+def fetch_best_or_worst_per_run(db_file: Path, metric: str, top_k: int, worst_first: bool):
     conn = sqlite3.connect(str(db_file))
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    columns = table_columns(cur, "generation_survivors")
-    if "fitness" in columns:
-        query = """
+    if metric == "fitness":
+        direction = "ASC" if worst_first else "DESC"
+        query = f"""
             SELECT
                 ranked.robot_id AS robot_id,
                 ranked.genome AS genome,
-                ranked.fitness AS fitness,
+                ranked.metric_value AS metric_value,
                 ranked.generation AS generation,
                 ranked.born_generation AS born_generation,
                 'survivor_generation' AS generation_label
@@ -206,60 +209,63 @@ def fetch_best_or_worst_per_run(db_file: Path, top_k: int, worst_first: bool):
                     r.robot_id AS robot_id,
                     r.genome AS genome,
                     r.born_generation AS born_generation,
-                    gs.fitness AS fitness,
+                    gs.fitness AS metric_value,
                     gs.generation AS generation,
                     ROW_NUMBER() OVER (
                         PARTITION BY r.robot_id
-                        ORDER BY gs.fitness {direction}, gs.generation DESC
-                    ) AS rank_in_robot
+                        ORDER BY gs.generation DESC
+                    ) AS survivor_rank
                 FROM generation_survivors gs
                 JOIN all_robots r ON r.robot_id = gs.robot_id
                 WHERE gs.fitness IS NOT NULL
             ) AS ranked
-            WHERE ranked.rank_in_robot = 1
-            ORDER BY ranked.fitness {direction}, ranked.robot_id ASC
+            WHERE ranked.survivor_rank = 1
+            ORDER BY ranked.metric_value {direction}, ranked.robot_id ASC
             LIMIT ?
-        """.format(direction="ASC" if worst_first else "DESC")
+        """
     else:
-        query = """
+        direction = "ASC" if worst_first else "DESC"
+        query = f"""
             SELECT
                 robot_id AS robot_id,
                 genome AS genome,
-                displacement AS fitness,
+                {metric} AS metric_value,
                 born_generation AS generation,
                 born_generation AS born_generation,
                 'born_generation' AS generation_label
             FROM all_robots
-            WHERE displacement IS NOT NULL
-            ORDER BY displacement {direction}
+            WHERE {metric} IS NOT NULL
+            ORDER BY {metric} {direction}, robot_id ASC
             LIMIT ?
-        """.format(direction="ASC" if worst_first else "DESC")
+        """
 
     rows = cur.execute(query, (top_k,)).fetchall()
     conn.close()
     return rows_to_dicts(rows)
 
 
-def fetch_best_or_worst_per_generation(db_file: Path, generations, top_k: int, worst_first: bool):
+def fetch_best_or_worst_per_generation(db_file: Path, generations, metric: str, top_k: int, worst_first: bool):
     conn = sqlite3.connect(str(db_file))
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
     placeholders = ",".join(["?"] * len(generations))
+    direction = "ASC" if worst_first else "DESC"
+    metric_expr = "gs.fitness" if metric == "fitness" else f"r.{metric}"
     rows = cur.execute(
         f"""
         SELECT
             r.robot_id AS robot_id,
             r.genome AS genome,
-            gs.fitness AS fitness,
+            {metric_expr} AS metric_value,
             gs.generation AS generation,
             r.born_generation AS born_generation,
             'survivor_generation' AS generation_label
         FROM generation_survivors gs
         JOIN all_robots r ON r.robot_id = gs.robot_id
         WHERE gs.generation IN ({placeholders})
-          AND gs.fitness IS NOT NULL
-        ORDER BY gs.generation ASC, gs.fitness {"ASC" if worst_first else "DESC"}
+          AND {metric_expr} IS NOT NULL
+        ORDER BY gs.generation ASC, {metric_expr} {direction}, r.robot_id ASC
         """,
         tuple(generations),
     ).fetchall()
@@ -280,14 +286,13 @@ def fetch_best_or_worst_per_generation(db_file: Path, generations, top_k: int, w
     return selected
 
 
-def fetch_manual_ids(db_file: Path, robot_ids):
+def fetch_manual_ids(db_file: Path, robot_ids, metric: str):
     conn = sqlite3.connect(str(db_file))
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
     placeholders = ",".join(["?"] * len(robot_ids))
-    columns = table_columns(cur, "generation_survivors")
-    if "fitness" in columns:
+    if metric == "fitness":
         query = f"""
             SELECT
                 r.robot_id AS robot_id,
@@ -298,7 +303,7 @@ def fetch_manual_ids(db_file: Path, robot_ids):
                     WHERE gs.robot_id = r.robot_id
                     ORDER BY gs.generation DESC
                     LIMIT 1
-                ) AS fitness,
+                ) AS metric_value,
                 (
                     SELECT gs.generation
                     FROM generation_survivors gs
@@ -317,7 +322,7 @@ def fetch_manual_ids(db_file: Path, robot_ids):
             SELECT
                 robot_id AS robot_id,
                 genome AS genome,
-                displacement AS fitness,
+                {metric} AS metric_value,
                 born_generation AS generation,
                 born_generation AS born_generation,
                 'born_generation' AS generation_label
@@ -333,20 +338,22 @@ def fetch_manual_ids(db_file: Path, robot_ids):
 
 def build_vis_args(params, render_mode, freeze_first_frame_seconds):
     return SimpleNamespace(
-        out_path=params.get("out_path", "tmp_out"),
-        study_name=params.get("study_name", "defaultstudy"),
-        experiment_name="viz_replay",
-        run=0,
-        evogym_steps=int(params.get("evogym_steps") or 500),
-        evogym_num_workers=1,
-        evogym_init_x=int(params.get("evogym_init_x") or 3),
-        evogym_init_y=int(params.get("evogym_init_y") or 1),
         evogym_action_bias=float(params.get("evogym_action_bias") or 1.0),
         evogym_action_amplitude=float(params.get("evogym_action_amplitude") or 0.4),
         evogym_period_steps=int(params.get("evogym_period_steps") or 20),
         evogym_headless=0,
         evogym_render_mode=render_mode or params.get("evogym_render_mode") or "screen",
-        evogym_freeze_first_frame_seconds=max(0.0, float(freeze_first_frame_seconds)),
+        evogym_freeze_first_frame_seconds=max(
+            0.0,
+            float(freeze_first_frame_seconds if freeze_first_frame_seconds is not None else (params.get("evogym_freeze_first_frame_seconds") or 0.0)),
+        ),
+        evogym_add_walls=int(params.get("evogym_add_walls") or 1),
+        evogym_add_ceiling=int(params.get("evogym_add_ceiling") or 0),
+        evogym_env_width=int(params.get("evogym_env_width") or 100),
+        evogym_env_height=int(params.get("evogym_env_height") or 20),
+        ppo_timesteps=int(params.get("ppo_timesteps") or 2048),
+        ppo_n_steps=int(params.get("ppo_n_steps") or 256),
+        ppo_batch_size=int(params.get("ppo_batch_size") or 64),
     )
 
 
@@ -369,9 +376,13 @@ def build_phenotype(genome, max_voxels, cube_face_size, env_conditions, plastic)
 
 
 def replay_robot(entry, vis_args, params, rank, total):
+    experiment_seed = load_experiment_seed(
+        db_path(params["out_path"], params["study_name"], entry["experiment_name"], entry["run"])
+    )
+
     print(
         f"\n[{rank}/{total}] exp={entry['experiment_name']} run={entry['run']} "
-        f"robot_id={entry['robot_id']} fitness_from_db={entry['fitness']:.1f} "
+        f"robot_id={entry['robot_id']} metric_from_db={entry['metric_value']:.3f} "
         f"born_generation={entry['born_generation']}"
     )
 
@@ -385,9 +396,23 @@ def replay_robot(entry, vis_args, params, rank, total):
         plastic=int(params.get("plastic") or 0),
     )
 
-    prepare_robot_files(ind, vis_args)
-    simulate_evogym_batch([ind], vis_args)
-    print(f"Replay displacement={ind.displacement:.1f}")
+    prepare_robot_files_online(ind, vis_args)
+    reward, food_taken, steps_until_food = replay_ppo_individual(ind, vis_args, experiment_seed)
+    print(
+        f"Replay reward={reward:.3f} "
+        f"food_taken={food_taken:.0f} "
+        f"steps_until_food={steps_until_food:.0f}"
+    )
+
+
+def load_experiment_seed(db_file: Path) -> int:
+    conn = sqlite3.connect(str(db_file))
+    cur = conn.cursor()
+    row = cur.execute("SELECT seed FROM experiment_info LIMIT 1").fetchone()
+    conn.close()
+    if row is None:
+        raise RuntimeError(f"No experiment seed found in {db_file}")
+    return int(row[0])
 
 
 def split_csv(text):
@@ -427,19 +452,12 @@ def pick_for_experiment(values, exp_idx, field_name):
     if len(values) == 1:
         return values[0]
     if exp_idx >= len(values):
-        raise ValueError(
-            f"Field '{field_name}' must have either one value or one per experiment."
-        )
+        raise ValueError(f"Field '{field_name}' must have either one value or one per experiment.")
     return values[exp_idx]
 
 
 def db_path(out_path, study_name, experiment_name, run):
     return Path(out_path) / study_name / experiment_name / f"run_{run}" / f"run_{run}"
-
-
-def table_columns(cur, table_name):
-    rows = cur.execute(f"PRAGMA table_info({table_name})").fetchall()
-    return {row[1] for row in rows}
 
 
 def rows_to_dicts(rows):
@@ -452,7 +470,7 @@ def rows_to_dicts(rows):
             {
                 "robot_id": int(row["robot_id"]),
                 "genome": genome,
-                "fitness": float(row["fitness"]),
+                "metric_value": float(row["metric_value"]),
                 "generation": row["generation"],
                 "born_generation": row["born_generation"],
                 "generation_label": row["generation_label"],

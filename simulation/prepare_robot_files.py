@@ -94,3 +94,19 @@ def prepare_robot_files(individual, args):
     individual.evogym_connections = connections
     individual.evogym_phase_offsets = phase_offsets
     individual.evogym_controller = controller
+
+
+def prepare_robot_files_online(individual, args):
+    """
+    Prepare EvoGym robot artifacts for online experiments.
+    """
+    body, phase_offsets_body = trim_phenotype_materials(
+        individual.phenotype,
+        getattr(individual, "phenotype_phase_offsets", None),
+    )
+    structure, connections, phase_offsets, controller = _build_evogym_robot_data(body, phase_offsets_body)
+
+    individual.evogym_structure = structure
+    individual.evogym_connections = connections
+    individual.evogym_phase_offsets = phase_offsets
+    individual.evogym_controller = controller

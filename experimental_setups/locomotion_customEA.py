@@ -8,10 +8,10 @@ import time
 # make repository folder the root
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
-from algorithms.experiment import Experiment
-from algorithms.EA_classes import Individual
-from algorithms.GRN_2D import GRN, initialization, mutation_type1, unequal_crossover_prop
-from simulation.simulation_resources import simulate_evogym_batch
+from experimental_setups.experiment import Experiment
+from experimental_setups.EA_classes import Individual
+from experimental_setups.GRN_2D import GRN, initialization, mutation_type1, unequal_crossover_prop
+from simulation.offline_simulation import simulate_evogym_batch
 from simulation.prepare_robot_files import prepare_robot_files
 from utils.metrics import genopheno_abs_metrics, behavior_abs_metrics, relative_metrics
 from utils.config import Config
@@ -23,7 +23,7 @@ from utils.config import Config
 class EA(Experiment):
     def __init__(self, args=None):
         # Allow instantiation-inject args OR fallback to config-inject
-        self.args =  Config()._get_params()
+        self.args = args if args is not None else Config()._get_params()
 
         super().__init__(self.args)  # sets out_path, DB, session, rng, id_counter
 
@@ -236,6 +236,3 @@ if __name__ == "__main__":
     minutes = int((elapsed % 3600) // 60)
     seconds = elapsed % 60
     print(f"\n[RUN-TIME]  {hours}h {minutes}m {seconds:.1f}s")
-
-
-

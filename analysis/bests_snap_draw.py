@@ -7,7 +7,7 @@ import sys
 import numpy as np
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent.parent
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
 from utils.config import Config
 
@@ -38,7 +38,13 @@ def main():
                 print('   gen: ', gen)
 
                 path_in = f'{path_out}/{experiment_name}/run_{run}/gen_{gen}'
+                if not os.path.isdir(path_in):
+                    print(f'    skip missing snapshot dir: {path_in}')
+                    continue
                 lst = os.listdir(path_in)
+                if not lst:
+                    print(f'    skip empty snapshot dir: {path_in}')
+                    continue
                 lst.sort(key=lambda x: int(x.split('_')[0]))
                 lst = lst[0:bests]
 
@@ -72,6 +78,10 @@ def main():
                 sorted_indices = np.argsort(fit_horizontal)[::-1]
                 horizontal = [horizontal[i] for i in sorted_indices]
                 sort_aux = 'sort'
+
+            if not horizontal:
+                print(f'  skip generation {gen}: no snapshot images found')
+                continue
 
             widths = [o.shape[1] for o in horizontal]
             max_width = max(widths)

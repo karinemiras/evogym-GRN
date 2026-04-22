@@ -4,7 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
-from algorithms.voxel_types import VOXEL_TYPES, TF_WEIGHTS
+from experimental_setups.voxel_types import VOXEL_TYPES, TF_WEIGHTS
 
 # a Gene Regulatory Network
 class GRN:

@@ -3,6 +3,10 @@ sqlalchemy
 matplotlib
 scipy
 pandas
-lxml
 opencv-python
 papermill
+scikit-learn
+cma
+gymnasium
+stable-baselines3
+torch

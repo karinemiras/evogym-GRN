@@ -85,7 +85,7 @@ class Individual:
 
         # === Dynamically create absolute metrics ======================
         for m in METRICS_ABS:
-            # displacement (x) is the only one that previously had -inf default
+            # displacement (x) is -inf by default
             if m == "displacement":
                 setattr(self, m, float('-inf'))
             else:

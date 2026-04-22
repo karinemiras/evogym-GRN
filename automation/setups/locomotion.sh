@@ -32,7 +32,7 @@ runs="${runs%,}"
 
 watchruns=$runs
 
-algorithm="basic_EA"
+algorithm="locomotion_customEA"
 
 fitness_metric="displacement"
 

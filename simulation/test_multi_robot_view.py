@@ -13,7 +13,7 @@ sys.path.append(str(ROOT))
 from evogym import EvoSim, EvoWorld, get_full_connectivity
 from evogym.viewer import EvoViewer
 
-from algorithms.voxel_types import VOXEL_TYPES
+from experimental_setups.voxel_types import VOXEL_TYPES
 
 
 GRID_SIZE = 5

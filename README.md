@@ -1,41 +1,20 @@
-(in the instructions below, the folder referred to as 'base' holds the current repo)
 
-# Base (GRN + EA with simulation connection)
+# GRN Virtual Creatures in EvoGym 
 
-This folder contains the evolutionary pipeline:
-- genome/GRN development (`algorithms/GRN_2D.py`)
-- optimization loops (`algorithms/basic_EA.py`, `algorithms/cmaes.py`)
-- EvoGym preparation and simulation (`simulation/prepare_robot_files.py`, `simulation/simulation_resources.py`)
+## Setup
 
-## Dependencies
-
-Core Python packages used by `base`:
-- `numpy`
-- `sqlalchemy`
-- `matplotlib`
-- `scipy`
-- `pandas`
-- `opencv-python`
-- `scikit-learn`
-- `lxml`
-- `cma`
-- `gymnasium`
-
-Plus EvoGym:
-- `../evogym` (install using original instructions: https://evolutiongym.github.io/)
-
-## Environment setup  
-
-From repository root:
+- Install EvoGym using the original instructions: https://evolutiongym.github.io/
+- Clone current repo
+- Install repo dependecies:
 
 ```bash
 python3.9 -m venv --system-site-packages .venv
 source .venv/bin/activate
-pip install gymnasium scikit-learn lxml cma
-pip install -r ./base/requirements.txt
+pip install -r requirements.txt
+
 ```
 
-Run a mini test: use random GRN to construct body+brain and then simulate it
+Run a test that uses a random GRN to generate the body+brain of a robot and then simulate it in EvoGym:
 
 ```bash
 cd base
@@ -44,10 +23,10 @@ python - <<'PY'
 import random
 import numpy as np
 from types import SimpleNamespace
-from algorithms.EA_classes import Individual
-from algorithms.GRN_2D import GRN, initialization
+from experimental_setups.EA_classes import Individual
+from experimental_setups.GRN_2D import GRN, initialization
 from simulation.prepare_robot_files import prepare_robot_files
-from simulation.simulation_resources import simulate_evogym_batch
+from simulation.offline_simulation import simulate_evogym_batch
 
 rng = random.Random(3)
 genome = initialization(rng, ini_genome_size=80)

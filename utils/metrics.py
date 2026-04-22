@@ -6,7 +6,7 @@ from sklearn.neighbors import KDTree
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
-from algorithms.voxel_types import VOXEL_TYPES
+from experimental_setups.voxel_types import VOXEL_TYPES
 
 METRICS_ABS = [
     # genotypic
@@ -14,6 +14,9 @@ METRICS_ABS = [
 
     # behavioral: forward center-of-mass displacement along EvoGym x axis, in voxel-length units
     "displacement",
+    "reward",
+    "food_taken",
+    "steps_until_food",
 
     # phenotypic
     "num_voxels",
@@ -62,7 +65,6 @@ def genopheno_abs_metrics(individual, args):
 
 
 def behavior_abs_metrics(population):
-    # displacement is assigned by simulation_resources as forward COM x displacement in voxel-length units
     # TODO: implement others and treat for -inf
     pass
 

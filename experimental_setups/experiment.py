@@ -7,9 +7,9 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 sys.path.append(str(ROOT))
-from algorithms.EA_classes import Base, Robot, GenerationSurvivor, Individual, ExperimentInfo
+from experimental_setups.EA_classes import Base, Robot, GenerationSurvivor, Individual, ExperimentInfo
 from utils.metrics import METRICS_ABS, METRICS_REL
 
 
@@ -35,11 +35,11 @@ class Experiment:
     def __init__(self, args):
         # paths
         self.out_path = f"{args.out_path}/{args.study_name}/{args.experiment_name}/run_{args.run}"
-        os.makedirs(self.out_path, exist_ok=True)
         self.db_path = os.path.join(self.out_path, f'run_{args.run}')
 
     def recover_db(self):
         # by default sqlalquemy does not overwrite db, but recovers it if existent instead
+        os.makedirs(self.out_path, exist_ok=True)
         self.engine = create_engine(f"sqlite:///{self.db_path}", echo=False, future=True)
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine, expire_on_commit=False)
@@ -51,11 +51,13 @@ class Experiment:
         if info is None:
             seed = random.randint(0, 2**32 - 1)
             print("seed (new)", seed)
+            self.seed = seed
             self.rng.seed(seed)
             self.session.add(ExperimentInfo(seed=seed))
             self.session.commit()
         else:
             print("seed (reused)", info.seed)
+            self.seed = info.seed
             self.rng.seed(info.seed)
 
         # running ID counter for Individuals/Robots

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# run this script from the root (folder): ./experiments/automation/run-analysis.sh pathPARAMSFILE/PARAMSFILE.sh
+# run this script from the root (folder): ./automation/run-analysis.sh pathPARAMSFILE/PARAMSFILE.sh
 
 DIR="$(dirname "${BASH_SOURCE[0]}")"
 study_path="$(basename $DIR)"

@@ -13,20 +13,24 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
 
 from evogym import EvoSim, EvoWorld, get_full_connectivity
+from evogym.utils import VOXEL_TYPES as EVOGYM_VOXEL_TYPES
 from evogym.viewer import EvoViewer
 
-from algorithms.voxel_types import VOXEL_TYPES
+from experimental_setups.voxel_types import VOXEL_TYPES
 
 
 GRID_SIZE = 6
-INIT_Y = 1
-START_X = 2
+INIT_Y = 3
+START_X = 6
 VIEWER_RESOLUTION = (2400, 1200)
 VIEWER_LOCK_Y = 4
 VIEWER_LOCK_HEIGHT = 12
 VIEWER_PADDING = (4, 1)
 VIEWER_SCALE = (0.03, 0.0)
 VIEWER_MANUAL_PADDING = (3.0, 2.0)
+WALL_THICKNESS = 1
+WALL_MARGIN_X = 4
+WALL_MARGIN_Y = 2
 
 # python simulation/test_multi_robot_limits.py \
 #   --robot_counts 10,20,30,40 \
@@ -40,6 +44,8 @@ def parse_args():
     )
     parser.add_argument("--steps", type=int, default=300, help="Simulation steps per condition.")
     parser.add_argument("--spacing", type=int, default=6, help="Gap in voxel cells between robot origins.")
+    parser.add_argument("--add_walls", type=int, default=1, help="1=surround robots with fixed walls, 0=open world.")
+    parser.add_argument("--add_ceiling", type=int, default=0, help="1=also add a top wall, 0=leave top open.")
     parser.add_argument(
         "--robot_counts",
         type=str,
@@ -188,15 +194,58 @@ def build_world(robot_count, actuator_fraction, spacing, seed):
     return world, brains, robot_names
 
 
-def compute_manual_camera(robot_count, spacing, resolution):
+def add_walls(world, robot_count, spacing, add_ceiling):
+    """
+    Build a fixed container around the one-row robot layout so the occupied
+    world stays bounded and easier to view.
+    """
+    inner_x_min = START_X - WALL_MARGIN_X
+    inner_x_max = START_X + (robot_count - 1) * spacing + GRID_SIZE + WALL_MARGIN_X
+    # Keep the arena itself strictly above y=0 so the floor can sit at y=0
+    # while all object origins remain non-negative for EvoGym.
+    inner_y_min = 1
+    inner_y_max = INIT_Y + GRID_SIZE + WALL_MARGIN_Y
+
+    wall_height = inner_y_max - inner_y_min
+    floor_width = inner_x_max - inner_x_min
+
+    fixed = EVOGYM_VOXEL_TYPES["FIXED"]
+
+    left_wall = np.full((wall_height, WALL_THICKNESS), fixed, dtype=np.int32)
+    right_wall = np.full((wall_height, WALL_THICKNESS), fixed, dtype=np.int32)
+    floor = np.full((WALL_THICKNESS, floor_width + 2 * WALL_THICKNESS), fixed, dtype=np.int32)
+
+    world.add_from_array("left_wall", left_wall, inner_x_min - WALL_THICKNESS, inner_y_min)
+    world.add_from_array("right_wall", right_wall, inner_x_max, inner_y_min)
+    world.add_from_array("floor", floor, inner_x_min - WALL_THICKNESS, inner_y_min - WALL_THICKNESS)
+
+    if add_ceiling:
+        ceiling = np.full((WALL_THICKNESS, floor_width + 2 * WALL_THICKNESS), fixed, dtype=np.int32)
+        world.add_from_array("ceiling", ceiling, inner_x_min - WALL_THICKNESS, inner_y_max)
+
+    return {
+        "inner_x_min": inner_x_min,
+        "inner_x_max": inner_x_max,
+        "inner_y_min": inner_y_min,
+        "inner_y_max": inner_y_max,
+    }
+
+
+def compute_manual_camera(robot_count, spacing, resolution, wall_bounds=None):
     """
     Build a stable camera that fits the full one-row layout for the current
     condition and matches the render aspect ratio to avoid visual distortion.
     """
-    x_min = START_X - VIEWER_MANUAL_PADDING[0]
-    x_max = START_X + (robot_count - 1) * spacing + GRID_SIZE + VIEWER_MANUAL_PADDING[0]
-    y_min = INIT_Y - VIEWER_MANUAL_PADDING[1]
-    y_max = INIT_Y + GRID_SIZE + VIEWER_MANUAL_PADDING[1]
+    if wall_bounds is None:
+        x_min = START_X - VIEWER_MANUAL_PADDING[0]
+        x_max = START_X + (robot_count - 1) * spacing + GRID_SIZE + VIEWER_MANUAL_PADDING[0]
+        y_min = INIT_Y - VIEWER_MANUAL_PADDING[1]
+        y_max = INIT_Y + GRID_SIZE + VIEWER_MANUAL_PADDING[1]
+    else:
+        x_min = wall_bounds["inner_x_min"] - VIEWER_MANUAL_PADDING[0]
+        x_max = wall_bounds["inner_x_max"] + VIEWER_MANUAL_PADDING[0]
+        y_min = wall_bounds["inner_y_min"] - VIEWER_MANUAL_PADDING[1]
+        y_max = wall_bounds["inner_y_max"] + VIEWER_MANUAL_PADDING[1]
 
     width = max(1.0, x_max - x_min)
     height = max(1.0, y_max - y_min)
@@ -223,12 +272,17 @@ def run_condition(
     manual_camera=False,
     camera_pos=None,
     camera_size=None,
+    add_walls_to_world=True,
+    add_ceiling=False,
 ):
     condition_seed = seed + robot_count * 1000 + int(round(actuator_fraction * 100))
     started = time.time()
 
     try:
         world, brains, robot_names = build_world(robot_count, actuator_fraction, spacing, condition_seed)
+        wall_bounds = None
+        if add_walls_to_world:
+            wall_bounds = add_walls(world, robot_count, spacing, add_ceiling)
         sim = EvoSim(world)
         sim.reset()
     except Exception as exc:
@@ -246,7 +300,12 @@ def run_condition(
     viewer = None
     if should_render and not headless:
         if manual_camera:
-            auto_pos, auto_size = compute_manual_camera(robot_count, spacing, VIEWER_RESOLUTION)
+            auto_pos, auto_size = compute_manual_camera(
+                robot_count,
+                spacing,
+                VIEWER_RESOLUTION,
+                wall_bounds=wall_bounds,
+            )
             camera_pos = (
                 auto_pos[0] if camera_pos is None or camera_pos[0] is None else camera_pos[0],
                 auto_pos[1] if camera_pos is None or camera_pos[1] is None else camera_pos[1],
@@ -351,6 +410,8 @@ def main():
                 manual_camera=bool(args.manual_camera),
                 camera_pos=(args.camera_x, args.camera_y),
                 camera_size=(args.camera_width, args.camera_height),
+                add_walls_to_world=bool(args.add_walls),
+                add_ceiling=bool(args.add_ceiling),
             )
             rows.append(row)
             print(

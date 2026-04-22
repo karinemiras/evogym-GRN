@@ -9,10 +9,10 @@ import time
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
 
-from algorithms.experiment import Experiment
-from algorithms.EA_classes import Individual
-from algorithms.GRN_2D import GRN, initialization
-from simulation.simulation_resources import simulate_evogym_batch
+from experimental_setups.experiment import Experiment
+from experimental_setups.EA_classes import Individual
+from experimental_setups.GRN_2D import GRN, initialization
+from simulation.offline_simulation import simulate_evogym_batch
 from simulation.prepare_robot_files import prepare_robot_files
 from utils.metrics import genopheno_abs_metrics, behavior_abs_metrics, relative_metrics
 from utils.config import Config

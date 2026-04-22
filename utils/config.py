@@ -33,7 +33,7 @@ class Config():
         parser.add_argument(
             "--algorithm",
             required=False,
-            default="basic_EA",
+            default="locomotion_customEA",
             type=str,
             help="",
         )
@@ -41,21 +41,21 @@ class Config():
         parser.add_argument(
             "--population_size",
             required=False,
-            default=10,
+            default=100,
             type=int,
         )
 
         parser.add_argument(
             "--offspring_size",
             required=False,
-            default=10,
+            default=100,
             type=int,
         )
 
         parser.add_argument(
             "--num_generations",
             required=False,
-            default=10,
+            default=100,
             type=int,
         )
 
@@ -69,7 +69,7 @@ class Config():
         parser.add_argument(
             "--max_voxels",
             required=False,
-            default=25,
+            default=36,
             type=int,
             help="",
         )
@@ -77,7 +77,7 @@ class Config():
         parser.add_argument(
             "--cube_face_size",
             required=False,
-            default=5,
+            default=6,
             type=int,
             help="",
         )
@@ -115,7 +115,7 @@ class Config():
         parser.add_argument(
             "--fitness_metric",
             required=False,
-            default="displacement",
+            default="reward",
             type=str,
         )
 
@@ -237,6 +237,70 @@ class Config():
             default="screen",
             type=str,
             help="Render mode when evogym_headless=0 (screen or human)."
+        )
+
+        parser.add_argument(
+            "--evogym_freeze_first_frame_seconds",
+            required=False,
+            default=0.0,
+            type=float,
+            help="How long to hold the first rendered frame before stepping the simulation."
+        )
+
+        parser.add_argument(
+            "--evogym_add_walls",
+            required=False,
+            default=1,
+            type=int,
+            help="Online foraging only: 1=add fixed side walls and floor, 0=open world."
+        )
+
+        parser.add_argument(
+            "--evogym_add_ceiling",
+            required=False,
+            default=0,
+            type=int,
+            help="Online foraging only: 1=also add a fixed ceiling, 0=leave top open."
+        )
+
+        parser.add_argument(
+            "--evogym_env_width",
+            required=False,
+            default=100,
+            type=int,
+            help="Online foraging only: fixed arena interior width in voxel cells."
+        )
+
+        parser.add_argument(
+            "--evogym_env_height",
+            required=False,
+            default=20,
+            type=int,
+            help="Online foraging only: fixed arena interior height in voxel cells."
+        )
+
+        parser.add_argument(
+            "--ppo_timesteps",
+            required=False,
+            default=1000,
+            type=int,
+            help="Online foraging only: PPO training timesteps per individual."
+        )
+
+        parser.add_argument(
+            "--ppo_n_steps",
+            required=False,
+            default=256,
+            type=int,
+            help="Online foraging only: PPO rollout length."
+        )
+
+        parser.add_argument(
+            "--ppo_batch_size",
+            required=False,
+            default=64,
+            type=int,
+            help="Online foraging only: PPO minibatch size."
         )
 
         args = parser.parse_args()

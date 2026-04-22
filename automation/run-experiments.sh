@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Run from repo root:
-#   ./experiments/automation/run-experiments.sh path/to/PARAMS.sh
+#   ./automation/run-experiments.sh path/to/PARAMS.sh
 set -euo pipefail
 
-params_file=${1:-experiments/locomotion.sh}
+params_file=${1:-automation/setups/locomotion.sh}
 source "$params_file"
 
 # Defaults
@@ -14,7 +14,7 @@ source "$params_file"
 : "${RUN_ANALYSIS:=1}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 mkdir -p "${out_path}/${study_name}" "${out_path}/${study_name}/analysis"
 
@@ -38,7 +38,7 @@ for idx in "${!EXP_LIST[@]}"; do
     echo ">> Running experiment=${exp} run=${run}  (log: ${logfile})"
 
     cmd=(
-      python3 -u "${REPO_ROOT}/algorithms/${algorithm}.py"
+      python3 -u "${REPO_ROOT}/experimental_setups/${algorithm}.py"
       --out_path "${out_path}"
       --experiment_name "${exp}"
       --env_conditions "${cond}"
@@ -61,6 +61,31 @@ for idx in "${!EXP_LIST[@]}"; do
       --run_simulation "${run_simulation}"
     )
 
+    if [[ -n "${evogym_freeze_first_frame_seconds+x}" ]]; then
+      cmd+=(--evogym_freeze_first_frame_seconds "${evogym_freeze_first_frame_seconds}")
+    fi
+    if [[ -n "${evogym_add_walls+x}" ]]; then
+      cmd+=(--evogym_add_walls "${evogym_add_walls}")
+    fi
+    if [[ -n "${evogym_add_ceiling+x}" ]]; then
+      cmd+=(--evogym_add_ceiling "${evogym_add_ceiling}")
+    fi
+    if [[ -n "${evogym_env_width+x}" ]]; then
+      cmd+=(--evogym_env_width "${evogym_env_width}")
+    fi
+    if [[ -n "${evogym_env_height+x}" ]]; then
+      cmd+=(--evogym_env_height "${evogym_env_height}")
+    fi
+    if [[ -n "${ppo_timesteps+x}" ]]; then
+      cmd+=(--ppo_timesteps "${ppo_timesteps}")
+    fi
+    if [[ -n "${ppo_n_steps+x}" ]]; then
+      cmd+=(--ppo_n_steps "${ppo_n_steps}")
+    fi
+    if [[ -n "${ppo_batch_size+x}" ]]; then
+      cmd+=(--ppo_batch_size "${ppo_batch_size}")
+    fi
+
     mkdir -p "${out_path}/${study_name}"
     "${cmd[@]}" >>"${logfile}" 2>&1
   done
@@ -68,5 +93,5 @@ done
 
 if [[ "${RUN_ANALYSIS}" -eq 1 ]]; then
   echo ">> All runs finished. Starting analysis..."
-  "${REPO_ROOT}/experiments/automation/run-analysis.sh" "$params_file"
+  "${REPO_ROOT}/automation/run-analysis.sh" "$params_file"
 fi

@@ -14,7 +14,7 @@ voxcraft-viz/
 
 # etc
 **/__pycache__/
-experiments/analysis/.ipynb_checkpoints/
+analysis/.ipynb_checkpoints/
 .idea/
 
 

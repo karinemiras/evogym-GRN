@@ -7,9 +7,9 @@ from sqlalchemy import create_engine, select
 from pathlib import Path
 
 # make repo root importable
-ROOT = Path(__file__).resolve().parent.parent.parent
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
-from algorithms.EA_classes import Robot, GenerationSurvivor 
+from experimental_setups.EA_classes import Robot, GenerationSurvivor 
 from utils.config import Config
 from utils.metrics import METRICS_ABS, METRICS_REL
 

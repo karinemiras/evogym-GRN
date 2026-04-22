@@ -8,23 +8,22 @@ from types import SimpleNamespace
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
-ROOT = Path(__file__).resolve().parent.parent.parent
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
-from algorithms.EA_classes import Robot, GenerationSurvivor
+from experimental_setups.EA_classes import Robot, GenerationSurvivor
 from utils.draw import draw_phenotype
 from utils.config import Config
-from algorithms.voxel_types import VOXEL_TYPES, VOXEL_TYPES_COLORS
+from experimental_setups.voxel_types import VOXEL_TYPES, VOXEL_TYPES_COLORS
 
 
 def get_algorithm_class(module, algorithm_name):
-    class_name_by_algorithm = {
-        "basic_EA": "EA",
-        "cmaes": "CMAES",
-    }
-    class_name = class_name_by_algorithm.get(algorithm_name)
-    if class_name is None:
-        raise ValueError(f"Unknown algorithm '{algorithm_name}'. Add its class name to snapshots_bests.py.")
-    return getattr(module, class_name)
+    if hasattr(module, "EA"):
+        return module.EA
+    if hasattr(module, "CMAES"):
+        return module.CMAES
+    raise ValueError(
+        f"Module for algorithm '{algorithm_name}' does not expose EA or CMAES."
+    )
 
 
 def main():
@@ -36,7 +35,7 @@ def main():
     generations = list(map(int, args.generations.split(",")))
 
     # instantiates the algorithm class with original params to develop the phenotypes
-    module_name = f"algorithms.{args.algorithm}"
+    module_name = f"experimental_setups.{args.algorithm}"
     module = importlib.import_module(module_name)
     algorithm = get_algorithm_class(module, args.algorithm)(args)
 

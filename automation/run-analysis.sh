@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # run this script from the repo root:
-# ./experiments/automation/run-analysis.sh path/to/PARAMSFILE.sh
+# ./automation/run-analysis.sh path/to/PARAMSFILE.sh
 
 if [ $# -eq 0 ]
   then
-    params_file="experiments/locomotion.sh"
+    params_file="automation/setups/locomotion.sh"
   else
     params_file=$1
 fi
@@ -15,7 +15,7 @@ source "$params_file"
 set +a
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 # Matplotlib/fontconfig need writable cache dirs when Codex or macOS sandboxing
 # cannot write to the default user cache locations.
@@ -23,15 +23,15 @@ export MPLCONFIGDIR="${out_path}/${study_name}/analysis/.matplotlib"
 export XDG_CACHE_HOME="${out_path}/${study_name}/analysis/.cache"
 mkdir -p "$MPLCONFIGDIR" "$XDG_CACHE_HOME"
 
-python3 "${REPO_ROOT}/experiments/analysis/consolidate.py" \
+python3 "${REPO_ROOT}/analysis/consolidate.py" \
  --study_name "$study_name" \
  --experiments "$experiments" \
  --runs "$runs" \
  --out_path "$out_path" \
  --final_gen "$final_gen";
 
-papermill "experiments/analysis/analysis.ipynb" \
-          "experiments/analysis/analysis-executed.ipynb" \
+papermill "analysis/analysis.ipynb" \
+          "analysis/analysis-executed.ipynb" \
           -p study_name  "$study_name" \
           -p experiments "$experiments" \
           -p runs "$runs" \
@@ -40,7 +40,7 @@ papermill "experiments/analysis/analysis.ipynb" \
           -p out_path "$out_path"
 
 
-python3 "${REPO_ROOT}/experiments/analysis/snapshots_bests.py" \
+python3 "${REPO_ROOT}/analysis/snapshots_bests.py" \
   --study_name "$study_name" \
   --experiments "$experiments" \
   --runs "$runs" \
@@ -53,7 +53,7 @@ python3 "${REPO_ROOT}/experiments/analysis/snapshots_bests.py" \
   --plastic "$plastic"
 
 
-python3 "${REPO_ROOT}/experiments/analysis/bests_snap_draw.py" \
+python3 "${REPO_ROOT}/analysis/bests_snap_draw.py" \
   --study_name "$study_name" \
   --experiments "$experiments" \
   --runs "$runs" \
